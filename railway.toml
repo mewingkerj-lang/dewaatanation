@@ -1,0 +1,11 @@
+cat > railway.toml << 'EOF'
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "npm start"
+healthcheckPath = "/"
+healthcheckTimeout = 100
+restartPolicyType = "always"
+restartPolicyMaxRetries = 10
+EOF
