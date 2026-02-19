@@ -1,0 +1,1191 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#6366f1">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Dewata RP">
+    <meta name="description" content="Control Panel untuk Server Dewata Nation Roleplay - Manage items, marketplace, guide, dan lebih banyak lagi">
+    <meta name="application-name" content="Dewata RP">
+    <meta name="msapplication-TileColor" content="#6366f1">
+    <meta name="msapplication-tap-highlight" content="no">
+    
+    <!-- Apple Touch Icons -->
+    <link rel="apple-touch-icon" sizes="152x152" href="/icons/iconme.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/iconme.png">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/iconme.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/iconme.png">
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json">
+    
+    <title>Dewata NationRP - Control Panel</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="features.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div id="loading-screen">
+        <div class="loading-content">
+            <div class="loading-logo">
+                <i class="fas fa-server"></i>
+            </div>
+            <h2>Dewata NationRP</h2>
+            <div class="loading-bar">
+                <div class="loading-progress"></div>
+            </div>
+            <p class="loading-text">Loading...</p>
+        </div>
+    </div>
+
+    <!-- Login Panel -->
+    <div id="login-panel" class="auth-panel">
+        <div class="auth-container">
+            <div class="auth-header">
+                <i class="fas fa-gamepad"></i>
+                <h1>Dewata NationRP</h1>
+                <p>Control Panel Server</p>
+            </div>
+            <form id="login-form" class="auth-form">
+                <div class="form-group">
+                    <i class="fas fa-user"></i>
+                    <input type="text" id="login-username" placeholder="Username (Renzy_Takashi)" required>
+                </div>
+                <div class="form-group">
+                    <i class="fas fa-lock"></i>
+                    <input type="password" id="login-password" placeholder="Password" required>
+                </div>
+                <button type="submit" class="btn-primary">
+                    <i class="fas fa-sign-in-alt"></i> Login
+                </button>
+            </form>
+            <div class="auth-footer">
+                <p>Belum punya akun? <a href="#" id="show-register">Click disini</a></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Register Panel -->
+    <div id="register-panel" class="auth-panel" style="display: none;">
+        <div class="auth-container">
+            <div class="auth-header">
+                <i class="fas fa-user-plus"></i>
+                <h1>Register Akun</h1>
+                <p>Dewata NationRP</p>
+            </div>
+            <form id="register-form" class="auth-form">
+                <div class="form-group">
+                    <i class="fas fa-user"></i>
+                    <input type="text" id="register-username" placeholder="Username (Renzy_Takashi)" required>
+                </div>
+                <div class="form-group">
+                    <i class="fas fa-phone"></i>
+                    <input type="text" id="register-phone" placeholder="WhatsApp (628xxx)" required>
+                </div>
+                <button type="submit" class="btn-primary">
+                    <i class="fas fa-paper-plane"></i> Kirim OTP
+                </button>
+            </form>
+            <div class="auth-footer">
+                <p>Sudah punya akun? <a href="#" id="show-login">Click disini</a></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- OTP Modal -->
+    <div id="otp-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2><i class="fas fa-shield-alt"></i> Verifikasi OTP</h2>
+            </div>
+            <div class="modal-body">
+                <p class="otp-desc">Masukkan 6 digit kode OTP yang telah dikirim ke WhatsApp Anda</p>
+                <div class="otp-inputs">
+                    <input type="text" maxlength="1" class="otp-input" data-index="0" autocomplete="off">
+                    <input type="text" maxlength="1" class="otp-input" data-index="1" autocomplete="off">
+                    <input type="text" maxlength="1" class="otp-input" data-index="2" autocomplete="off">
+                    <input type="text" maxlength="1" class="otp-input" data-index="3" autocomplete="off">
+                    <input type="text" maxlength="1" class="otp-input" data-index="4" autocomplete="off">
+                    <input type="text" maxlength="1" class="otp-input" data-index="5" autocomplete="off">
+                </div>
+                <div class="otp-countdown-wrapper">
+                    <div id="otp-countdown-bar" class="otp-countdown-bar">
+                        <div id="otp-countdown-fill" class="otp-countdown-fill"></div>
+                    </div>
+                    <p id="otp-timer-text" class="otp-timer-text">
+                        <i class="fas fa-clock"></i> Kode berlaku selama <span id="otp-timer-display">5:00</span>
+                    </p>
+                </div>
+                <div id="otp-expired-msg" class="otp-expired-msg" style="display:none;">
+                    <i class="fas fa-exclamation-triangle"></i> Kode OTP sudah expired!
+                    <button id="resend-otp-btn" class="btn-secondary btn-small">
+                        <i class="fas fa-redo"></i> Kirim Ulang OTP
+                    </button>
+                </div>
+                <button id="verify-otp-btn" class="btn-primary otp-verify-btn">
+                    <i class="fas fa-check"></i> Verifikasi
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Dashboard -->
+    <div id="main-dashboard" style="display: none;">
+        <!-- Sidebar Overlay (untuk mobile) -->
+        <div id="sidebar-overlay" class="sidebar-overlay"></div>
+        
+        <!-- Sidebar -->
+        <div id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <h2><i class="fas fa-server"></i> Dewata RP</h2>
+                <button id="close-sidebar" class="close-sidebar-btn">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="sidebar-menu">
+                <a href="#" class="menu-item active" data-page="dashboard">
+                    <i class="fas fa-home"></i> Dashboard
+                </a>
+                <a href="#" class="menu-item" data-page="inventory">
+                    <i class="fas fa-th"></i> Inventory
+                </a>
+                <a href="#" class="menu-item" data-page="marketplace">
+                    <i class="fas fa-store"></i> Marketplace
+                </a>
+                <a href="#" class="menu-item" data-page="market-digital">
+                    <i class="fas fa-building"></i> Market Digital
+                </a>
+                <a href="#" class="menu-item" data-page="chat-global">
+                    <i class="fas fa-comments"></i> Chat Global
+                </a>
+                <a href="#" class="menu-item" data-page="guide">
+                    <i class="fas fa-users"></i> Guide
+                </a>
+                <a href="#" class="menu-item" data-page="transfer">
+                    <i class="fas fa-exchange-alt"></i> Transfer
+                </a>
+                <a href="#" class="menu-item admin-only" data-page="admin-panel" style="display: none;">
+                    <i class="fas fa-shield-alt"></i> Admin Panel
+                </a>
+                <a href="#" class="menu-item" id="logout-btn">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </a>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div id="main-content" class="main-content">
+            <!-- Top Bar -->
+            <div class="top-bar">
+                <button id="toggle-sidebar" class="toggle-sidebar-btn">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <div class="top-bar-actions">
+                    <!-- PWA Status Indicator -->
+                    <div id="pwa-status-indicator" class="pwa-status-indicator">
+                        <i class="fas fa-wifi"></i>
+                    </div>
+                    
+                    <!-- PWA Install Button -->
+                    <button id="pwa-install-btn" class="pwa-install-btn" onclick="promptInstall()" style="display: none;" title="Install sebagai App">
+                        <i class="fas fa-download"></i>
+                        <span class="install-text">Install</span>
+                    </button>
+                    
+                    <!-- Notification Bell -->
+                    <button id="notification-bell" class="notification-bell" onclick="requestNotificationPermission()" title="Enable Notifications">
+                        <i class="fas fa-bell"></i>
+                        <span id="notification-badge" class="notification-badge" style="display: none;">0</span>
+                    </button>
+                </div>
+                <div class="user-info">
+                    <i class="fas fa-user-circle"></i>
+                    <span id="username-display">Username</span>
+                </div>
+            </div>
+
+            <!-- Dashboard Page -->
+            <div id="page-dashboard" class="page active">
+                <div class="page-header">
+                    <h1><i class="fas fa-home"></i> Dashboard</h1>
+                </div>
+                <div class="dashboard-content">
+                    <div class="welcome-card">
+                        <h2>Selamat Datang di Dewata NationRP!</h2>
+                        <p>Server Roleplay SAMP terbaik di Indonesia dengan sistem yang berkualitas dan community yang solid. Bergabunglah bersama kami untuk pengalaman bermain yang tidak akan terlupakan!</p>
+                    </div>
+                    
+                    <!-- Server Status -->
+                    <div class="server-status-section">
+                        <div class="server-status-header">
+                            <h3><i class="fas fa-server"></i> Server Status</h3>
+                            <button id="refresh-server-btn" class="btn-small btn-primary" onclick="loadServerStatus()">
+                                <i class="fas fa-sync-alt"></i> Refresh
+                            </button>
+                        </div>
+                        
+                        <div id="server-status-loading" class="loading-status">
+                            <i class="fas fa-spinner fa-spin"></i> Loading server status...
+                        </div>
+                        
+                        <div id="server-status-content" style="display: none;">
+                            <!-- Server Info -->
+                            <div class="status-card">
+                                <h4><i class="fas fa-info-circle"></i> Server Information</h4>
+                                <div class="info-grid">
+                                    <div class="info-item status">
+                                        <label>Status:</label>
+                                        <span id="server-online" class="status-badge">-</span>
+                                    </div>
+                                    <div class="info-item">
+                                        <label>IP:</label>
+                                        <span id="server-ip">-</span>
+                                    </div>
+                                    <div class="info-item">
+                                        <label>Port:</label>
+                                        <span id="server-port">-</span>
+                                    </div>
+                                    <div class="info-item">
+                                        <label>Hostname:</label>
+                                        <span id="server-hostname">-</span>
+                                    </div>
+                                    <div class="info-item">
+                                        <label>Gamemode:</label>
+                                        <span id="server-gamemode">-</span>
+                                    </div>
+                                    <div class="info-item">
+                                        <label>Map:</label>
+                                        <span id="server-mapname">-</span>
+                                    </div>
+                                    <div class="info-item highlight">
+                                        <label>Players Online:</label>
+                                        <span id="server-players" class="players-count">-</span>
+                                    </div>
+                                    <div class="info-item">
+                                        <label>Max Players:</label>
+                                        <span id="server-maxplayers">-</span>
+                                    </div>
+                                    <div class="info-item">
+                                        <label>Password:</label>
+                                        <span id="server-password">-</span>
+                                    </div>
+                                    <div class="info-item">
+                                        <label>Ping:</label>
+                                        <span id="server-ping" class="ping-value">-</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Region Info -->
+                            <div class="status-card">
+                                <h4><i class="fas fa-globe"></i> Region Information</h4>
+                                <div class="info-grid">
+                                    <div class="info-item">
+                                        <label>Country:</label>
+                                        <span id="region-country">-</span>
+                                    </div>
+                                    <div class="info-item">
+                                        <label>Country Code:</label>
+                                        <span id="region-code">-</span>
+                                    </div>
+                                    <div class="info-item">
+                                        <label>Region:</label>
+                                        <span id="region-name">-</span>
+                                    </div>
+                                    <div class="info-item">
+                                        <label>City:</label>
+                                        <span id="region-city">-</span>
+                                    </div>
+                                    <div class="info-item">
+                                        <label>ISP:</label>
+                                        <span id="region-isp">-</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Player List -->
+                            <div class="status-card">
+                                <h4><i class="fas fa-users"></i> Players Online (<span id="playerlist-count">0</span>)</h4>
+                                <div class="player-list" id="player-list">
+                                    <div class="no-players">No players online</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="server-status-error" style="display: none;" class="error-status">
+                            <i class="fas fa-exclamation-circle"></i>
+                            <p>Server Offline atau Tidak Merespon</p>
+                            <button class="btn-small btn-primary" onclick="loadServerStatus()">
+                                <i class="fas fa-redo"></i> Try Again
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Inventory Page -->
+            <div id="page-inventory" class="page">
+                <div class="page-header">
+                    <h1><i class="fas fa-th"></i> Inventory</h1>
+                </div>
+                
+                <!-- Inventory Grid -->
+                <div class="inventory-section">
+                    <div class="inventory-header">
+                        <h3><i class="fas fa-box-open"></i> Items Inventory</h3>
+                        <div class="inventory-filters">
+                            <button class="filter-btn active" data-filter="all">All</button>
+                            <button class="filter-btn" data-filter="legal">Legal</button>
+                            <button class="filter-btn" data-filter="illegal">Illegal</button>
+                            <select id="inventory-sort">
+                                <option value="name">Sort by Name</option>
+                                <option value="quantity">Sort by Quantity</option>
+                                <option value="rarity">Sort by Rarity</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="inventory-grid" class="inventory-grid"></div>
+                </div>
+            </div>
+
+            <!-- Market Digital Page -->
+            <div id="page-market-digital" class="page">
+                <div class="page-header">
+                    <h1><i class="fas fa-building"></i> Market Digital</h1>
+                    <button id="create-digital-asset-btn" class="btn-primary">
+                        <i class="fas fa-plus"></i> Post Asset
+                    </button>
+                </div>
+                <div class="market-digital-filters">
+                    <div class="filter-group">
+                        <select id="digital-asset-type-filter">
+                            <option value="all">All Assets</option>
+                            <option value="house">Houses</option>
+                            <option value="business">Business</option>
+                            <option value="vehicle">Vehicles</option>
+                            <option value="motorcycle">Motorcycles</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <select id="digital-sort">
+                            <option value="newest">Newest First</option>
+                            <option value="price_asc">Price: Low to High</option>
+                            <option value="price_desc">Price: High to Low</option>
+                            <option value="popular">Most Viewed</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <input type="text" id="digital-asset-search" placeholder="Search by name or location...">
+                        <button id="digital-search-btn" class="btn-primary">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="market-digital-assets" class="digital-assets-grid"></div>
+            </div>
+
+            <!-- Create Digital Asset Modal -->
+            <div id="create-digital-asset-modal" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2>Post Digital Asset</h2>
+                        <span class="close-modal">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <form id="create-digital-asset-form">
+                            <div class="form-group">
+                                <label>Photo</label>
+                                <input type="file" id="digital-asset-photo" accept="image/*">
+                            </div>
+                            <div class="form-group">
+                                <label>Asset Type</label>
+                                <select id="digital-asset-type" required>
+                                    <option value="house">House</option>
+                                    <option value="business">Business</option>
+                                    <option value="vehicle">Vehicle</option>
+                                    <option value="motorcycle">Motorcycle</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Asset Name</label>
+                                <input type="text" id="digital-asset-name" placeholder="e.g., Vinewood Hills Mansion" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Location</label>
+                                <input type="text" id="digital-asset-location" placeholder="e.g., Vinewood Hills, Los Santos" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Price</label>
+                                <input type="number" id="digital-asset-price" min="100000" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Description</label>
+                                <textarea id="digital-asset-description" rows="4" placeholder="Describe your asset..."></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label>Features (JSON format, optional)</label>
+                                <textarea id="digital-asset-features" rows="3" placeholder='{"bedrooms": 3, "garage": 2, "pool": true}'></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label>WhatsApp</label>
+                                <input type="text" id="digital-asset-phone" placeholder="628xxx" required>
+                            </div>
+                            <div class="form-group">
+                                <label>SAMP ID</label>
+                                <input type="number" id="digital-asset-samp" required>
+                            </div>
+                            <button type="submit" class="btn-primary">
+                                <i class="fas fa-check"></i> Post Asset
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Marketplace Page -->
+            <div id="page-marketplace" class="page">
+                <div class="page-header">
+                    <h1><i class="fas fa-store"></i> Marketplace</h1>
+                    <button id="create-product-btn" class="btn-primary">
+                        <i class="fas fa-plus"></i> Buat Produk
+                    </button>
+                </div>
+                <div class="marketplace-filters">
+                    <div class="filter-group">
+                        <select id="product-type-filter">
+                            <option value="all">Semua Produk</option>
+                            <option value="legal">Legal Items</option>
+                            <option value="illegal">Illegal Items</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <input type="text" id="product-search" placeholder="Cari produk...">
+                        <button id="search-btn" class="btn-primary">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="marketplace-products" class="products-grid"></div>
+            </div>
+
+            <!-- Create Product Modal -->
+            <div id="create-product-modal" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2>Buat Produk Baru</h2>
+                        <span class="close-modal">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <form id="create-product-form">
+                            <div class="form-group">
+                                <label>Foto Produk</label>
+                                <input type="file" id="product-photo" accept="image/*">
+                            </div>
+                            <div class="form-group">
+                                <label>Nama Produk</label>
+                                <input type="text" id="product-name" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Tipe Barang</label>
+                                <select id="product-type" required>
+                                    <option value="legal">Legal Items</option>
+                                    <option value="illegal">Illegal Items</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Harga (Min: 5jt, Max: 300jt)</label>
+                                <input type="number" id="product-price" min="5000000" max="300000000" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Nomor WhatsApp</label>
+                                <input type="text" id="product-phone" placeholder="628xxx" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Nomor SAMP</label>
+                                <input type="number" id="product-samp" required>
+                            </div>
+                            <button type="submit" class="btn-primary">
+                                <i class="fas fa-check"></i> Buat Produk
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat Global Page -->
+            <div id="page-chat-global" class="page">
+                <div class="page-header">
+                    <h1><i class="fas fa-comments"></i> Chat Global</h1>
+                    <button id="clear-global-chat-btn" class="btn-danger" style="display: none;">
+                        <i class="fas fa-trash"></i> Clear All
+                    </button>
+                </div>
+                <div class="chat-container">
+                    <div class="chat-messages" id="global-chat-messages"></div>
+                    <div class="chat-input">
+                        <input type="text" id="global-message-input" placeholder="Ketik pesan...">
+                        <button id="send-global-message" class="btn-primary">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Guide Page -->
+            <div id="page-guide" class="page">
+                <div class="page-header">
+                    <h1><i class="fas fa-users"></i> Guide</h1>
+                    <div class="guide-header-buttons">
+                        <button id="my-invites-btn" class="btn-secondary">
+                            <i class="fas fa-envelope"></i> Invites <span id="invite-badge" class="badge">0</span>
+                        </button>
+                        <button id="create-guide-btn" class="btn-primary">
+                            <i class="fas fa-plus"></i> Buat Guide
+                        </button>
+                    </div>
+                </div>
+                <div id="guide-list" class="guide-list"></div>
+                <div id="guide-detail" class="guide-detail" style="display: none;">
+                    <div class="guide-detail-header">
+                        <button id="back-to-guide-list" class="btn-secondary">
+                            <i class="fas fa-arrow-left"></i> Kembali
+                        </button>
+                        <h2 id="guide-detail-name"></h2>
+                        <div class="guide-actions" id="guide-captain-actions" style="display: none;">
+                            <button id="manage-guide-btn" class="btn-primary">
+                                <i class="fas fa-cog"></i> Manage
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Guide Info -->
+                    <div class="guide-info-section">
+                        <div class="guide-info-card">
+                            <h3><i class="fas fa-info-circle"></i> Info Guide</h3>
+                            <div class="guide-stats">
+                                <div class="stat-item">
+                                    <label>Captain:</label>
+                                    <span id="guide-captain">-</span>
+                                </div>
+                                <div class="stat-item">
+                                    <label>Representative 1:</label>
+                                    <span id="guide-rep1">-</span>
+                                </div>
+                                <div class="stat-item">
+                                    <label>Representative 2:</label>
+                                    <span id="guide-rep2">-</span>
+                                </div>
+                                <div class="stat-item">
+                                    <label>Members:</label>
+                                    <span id="guide-member-count">0/0</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="guide-members-card">
+                            <h3><i class="fas fa-users"></i> Members</h3>
+                            <div id="guide-members-list" class="members-list"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Guide Chat -->
+                    <div class="chat-container">
+                        <div class="chat-messages" id="guide-chat-messages"></div>
+                        <div class="chat-input">
+                            <input type="text" id="guide-message-input" placeholder="Ketik pesan...">
+                            <button id="send-guide-message" class="btn-primary">
+                                <i class="fas fa-paper-plane"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Leave Guide Button -->
+                    <div class="guide-footer" id="guide-member-actions">
+                        <button id="leave-guide-btn" class="btn-danger">
+                            <i class="fas fa-sign-out-alt"></i> Keluar dari Guide
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Create Guide Modal -->
+            <div id="create-guide-modal" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2>Buat Guide Baru</h2>
+                        <span class="close-modal">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <form id="create-guide-form">
+                            <div class="form-group">
+                                <label>Nama Guide</label>
+                                <input type="text" id="guide-name" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Max Member (Min: 4, Max: 12)</label>
+                                <input type="number" id="guide-max-members" min="4" max="12" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Representative 1</label>
+                                <input type="text" id="guide-rep1" placeholder="Renzy_Takashi" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Representative 2</label>
+                                <input type="text" id="guide-rep2" placeholder="Renzy_Takashi" required>
+                            </div>
+                            <button type="submit" class="btn-primary">
+                                <i class="fas fa-check"></i> Buat Guide
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- My Invites Modal -->
+            <div id="my-invites-modal" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2>Pending Invites</h2>
+                        <span class="close-modal">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <div id="invites-list" class="invites-list"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Manage Guide Modal -->
+            <div id="manage-guide-modal" class="modal">
+                <div class="modal-content large-modal">
+                    <div class="modal-header">
+                        <h2>Manage Guide</h2>
+                        <span class="close-modal">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <div class="manage-tabs">
+                            <button class="manage-tab-btn active" data-tab="invite">
+                                <i class="fas fa-user-plus"></i> Invite Member
+                            </button>
+                            <button class="manage-tab-btn" data-tab="representatives">
+                                <i class="fas fa-star"></i> Representatives
+                            </button>
+                            <button class="manage-tab-btn" data-tab="members">
+                                <i class="fas fa-users"></i> Kick Members
+                            </button>
+                            <button class="manage-tab-btn" data-tab="leadership">
+                                <i class="fas fa-crown"></i> Leadership
+                            </button>
+                            <button class="manage-tab-btn" data-tab="danger">
+                                <i class="fas fa-exclamation-triangle"></i> Danger Zone
+                            </button>
+                        </div>
+                        
+                        <div class="manage-content">
+                            <!-- Invite Tab -->
+                            <div class="manage-tab-content active" id="tab-invite">
+                                <h3>Invite Member</h3>
+                                <form id="invite-member-form">
+                                    <div class="form-group">
+                                        <label>Username</label>
+                                        <input type="text" id="invite-username" placeholder="Renzy_Takashi" required>
+                                    </div>
+                                    <button type="submit" class="btn-primary">
+                                        <i class="fas fa-paper-plane"></i> Kirim Invite
+                                    </button>
+                                </form>
+                                <div class="pending-invites-section">
+                                    <h4>Pending Invites</h4>
+                                    <div id="pending-invites-list"></div>
+                                </div>
+                            </div>
+                            
+                            <!-- Representatives Tab -->
+                            <div class="manage-tab-content" id="tab-representatives">
+                                <h3>Manage Representatives</h3>
+                                <div class="rep-section">
+                                    <h4>Representative 1</h4>
+                                    <div id="rep1-current" class="current-rep">Tidak ada</div>
+                                    <form id="add-rep1-form" class="rep-form">
+                                        <div class="form-group">
+                                            <input type="text" id="add-rep1-username" placeholder="Username member">
+                                        </div>
+                                        <div class="btn-group">
+                                            <button type="submit" class="btn-primary">
+                                                <i class="fas fa-plus"></i> Add
+                                            </button>
+                                            <button type="button" id="remove-rep1-btn" class="btn-danger">
+                                                <i class="fas fa-times"></i> Remove
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+                                <div class="rep-section">
+                                    <h4>Representative 2</h4>
+                                    <div id="rep2-current" class="current-rep">Tidak ada</div>
+                                    <form id="add-rep2-form" class="rep-form">
+                                        <div class="form-group">
+                                            <input type="text" id="add-rep2-username" placeholder="Username member">
+                                        </div>
+                                        <div class="btn-group">
+                                            <button type="submit" class="btn-primary">
+                                                <i class="fas fa-plus"></i> Add
+                                            </button>
+                                            <button type="button" id="remove-rep2-btn" class="btn-danger">
+                                                <i class="fas fa-times"></i> Remove
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                            
+                            <!-- Members Tab -->
+                            <div class="manage-tab-content" id="tab-members">
+                                <h3>Kick Members</h3>
+                                <div id="kickable-members-list" class="members-kick-list"></div>
+                            </div>
+                            
+                            <!-- Leadership Tab -->
+                            <div class="manage-tab-content" id="tab-leadership">
+                                <h3>Transfer Leadership</h3>
+                                <p class="warning-text">
+                                    <i class="fas fa-exclamation-triangle"></i>
+                                    Setelah transfer, Anda akan menjadi member biasa!
+                                </p>
+                                <form id="change-leader-form">
+                                    <div class="form-group">
+                                        <label>Username Member Baru</label>
+                                        <input type="text" id="new-leader-username" placeholder="Renzy_Takashi" required>
+                                    </div>
+                                    <button type="submit" class="btn-danger">
+                                        <i class="fas fa-crown"></i> Transfer Leadership
+                                    </button>
+                                </form>
+                            </div>
+                            
+                            <!-- Danger Zone Tab -->
+                            <div class="manage-tab-content" id="tab-danger">
+                                <h3>Danger Zone</h3>
+                                <div class="danger-zone">
+                                    <div class="danger-item">
+                                        <div>
+                                            <h4>Delete Guide</h4>
+                                            <p>Hapus guide secara permanen. Semua data akan hilang!</p>
+                                        </div>
+                                        <button id="delete-guide-btn" class="btn-danger">
+                                            <i class="fas fa-trash"></i> Delete Guide
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Transfer Page -->
+            <div id="page-transfer" class="page">
+                <div class="page-header">
+                    <h1><i class="fas fa-exchange-alt"></i> Transfer</h1>
+                </div>
+                <div class="transfer-tabs">
+                    <button class="tab-btn active" data-tab="transfer-send">Transfer</button>
+                    <button class="tab-btn" data-tab="transfer-sent">History Sent</button>
+                    <button class="tab-btn" data-tab="transfer-received">History Received</button>
+                </div>
+                <div class="transfer-content">
+                    <!-- Transfer Tab -->
+                    <div id="transfer-send" class="transfer-tab active">
+                        <form id="transfer-form" class="transfer-form">
+                            <div class="form-group">
+                                <label>Username Penerima</label>
+                                <input type="text" id="transfer-receiver" placeholder="Renzy_Takashi" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Jumlah Money</label>
+                                <input type="number" id="transfer-amount" min="1" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Tipe Transfer</label>
+                                <select id="transfer-type" required>
+                                    <option value="pCash">Cash</option>
+                                    <option value="pBank">Bank</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn-primary">
+                                <i class="fas fa-paper-plane"></i> Transfer
+                            </button>
+                        </form>
+                    </div>
+                    <!-- History Sent Tab -->
+                    <div id="transfer-sent" class="transfer-tab">
+                        <div id="transfer-sent-list" class="transfer-list"></div>
+                    </div>
+                    <!-- History Received Tab -->
+                    <div id="transfer-received" class="transfer-tab">
+                        <div id="transfer-received-list" class="transfer-list"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Admin Panel Page -->
+            <div id="page-admin-panel" class="page">
+                <div class="page-header">
+                    <h1><i class="fas fa-shield-alt"></i> Admin Panel</h1>
+                </div>
+                <div id="admin-key-verify" class="admin-key-section">
+                    <h3>Masukkan Admin Key</h3>
+                    <div class="form-group">
+                        <input type="password" id="admin-key-input" placeholder="Admin Key">
+                        <button id="verify-admin-key" class="btn-primary">Verify</button>
+                    </div>
+                </div>
+                <div id="admin-panel-content" class="admin-content" style="display: none;">
+                    <div class="admin-section">
+                        <h3><i class="fas fa-money-bill"></i> Manage Money</h3>
+                        <form id="admin-money-form">
+                            <div class="form-group">
+                                <label>Username</label>
+                                <input type="text" id="admin-money-username" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Jumlah</label>
+                                <input type="number" id="admin-money-amount" min="5000000" max="500000000" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Tipe</label>
+                                <select id="admin-money-type" required>
+                                    <option value="cash">Cash</option>
+                                    <option value="bank">Bank</option>
+                                </select>
+                            </div>
+                            <div class="btn-group">
+                                <button type="button" class="btn-primary" data-action="add">
+                                    <i class="fas fa-plus"></i> Add Money
+                                </button>
+                                <button type="button" class="btn-danger" data-action="remove">
+                                    <i class="fas fa-minus"></i> Remove Money
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="admin-section">
+                        <h3><i class="fas fa-trash"></i> Clear Data</h3>
+                        <div class="btn-group">
+                            <button id="admin-clear-global" class="btn-danger">
+                                <i class="fas fa-comments"></i> Clear Global Chat
+                            </button>
+                            <button id="admin-clear-marketplace" class="btn-danger">
+                                <i class="fas fa-store"></i> Clear Marketplace
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="admin-section">
+                        <h3><i class="fas fa-users"></i> Clear Guide Chat</h3>
+                        <div class="form-group">
+                            <input type="text" id="admin-guide-name" placeholder="Nama Guide">
+                            <button id="admin-clear-guide" class="btn-danger">
+                                <i class="fas fa-trash"></i> Clear Guide Chat
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="admin-section">
+                        <h3><i class="fas fa-user-times"></i> Hapus Akun</h3>
+                        <div class="form-group">
+                            <input type="text" id="admin-delete-username" placeholder="Username">
+                            <button id="admin-delete-account" class="btn-danger">
+                                <i class="fas fa-trash"></i> Hapus Akun
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="admin-section">
+                        <h3><i class="fas fa-gift"></i> Give Items</h3>
+                        <div class="give-items-tabs">
+                            <button class="give-tab-btn active" data-tab="give">
+                                <i class="fas fa-hand-holding"></i> Give Items
+                            </button>
+                            <button class="give-tab-btn" data-tab="history">
+                                <i class="fas fa-history"></i> History Give Items
+                            </button>
+                        </div>
+
+                        <div class="give-items-content">
+                            <!-- Give Items Tab -->
+                            <div class="give-tab-content active" id="give-tab-give">
+                                <form id="admin-give-item-form" class="give-items-form">
+                                    <div class="give-form-grid">
+                                        <div class="form-group">
+                                            <label><i class="fas fa-user"></i> Username Player</label>
+                                            <input type="text" id="give-username" placeholder="Renzy_Takashi" required>
+                                        </div>
+                                        <div class="form-group">
+                                            <label><i class="fas fa-boxes"></i> Jumlah / Value</label>
+                                            <input type="number" id="give-quantity" placeholder="Masukkan jumlah..." min="1" max="999" required>
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label><i class="fas fa-cube"></i> Pilih Type Item</label>
+                                        <div class="item-type-grid">
+                                            <label class="item-type-option">
+                                                <input type="radio" name="give-item-type" value="pBatu" required>
+                                                <div class="item-type-card">
+                                                    <span class="item-type-icon">🪨</span>
+                                                    <span class="item-type-name">Batu Bersih</span>
+                                                    <span class="item-type-code">pBatu</span>
+                                                </div>
+                                            </label>
+                                            <label class="item-type-option">
+                                                <input type="radio" name="give-item-type" value="pBatuk">
+                                                <div class="item-type-card">
+                                                    <span class="item-type-icon">⛰️</span>
+                                                    <span class="item-type-name">Batu Kotor</span>
+                                                    <span class="item-type-code">pBatuk</span>
+                                                </div>
+                                            </label>
+                                            <label class="item-type-option">
+                                                <input type="radio" name="give-item-type" value="pFish">
+                                                <div class="item-type-card">
+                                                    <span class="item-type-icon">🐟</span>
+                                                    <span class="item-type-name">Ikan Biasa</span>
+                                                    <span class="item-type-code">pFish</span>
+                                                </div>
+                                            </label>
+                                            <label class="item-type-option">
+                                                <input type="radio" name="give-item-type" value="pPenyu">
+                                                <div class="item-type-card">
+                                                    <span class="item-type-icon">🐢</span>
+                                                    <span class="item-type-name">Penyu</span>
+                                                    <span class="item-type-code">pPenyu</span>
+                                                </div>
+                                            </label>
+                                            <label class="item-type-option">
+                                                <input type="radio" name="give-item-type" value="pDolphin">
+                                                <div class="item-type-card">
+                                                    <span class="item-type-icon">🐬</span>
+                                                    <span class="item-type-name">Dolphin</span>
+                                                    <span class="item-type-code">pDolphin</span>
+                                                </div>
+                                            </label>
+                                            <label class="item-type-option">
+                                                <input type="radio" name="give-item-type" value="pHiu">
+                                                <div class="item-type-card">
+                                                    <span class="item-type-icon">🦈</span>
+                                                    <span class="item-type-name">Ikan Hiu</span>
+                                                    <span class="item-type-code">pHiu</span>
+                                                </div>
+                                            </label>
+                                            <label class="item-type-option">
+                                                <input type="radio" name="give-item-type" value="pMegalodon">
+                                                <div class="item-type-card">
+                                                    <span class="item-type-icon">🦑</span>
+                                                    <span class="item-type-name">Ikan Megalodon</span>
+                                                    <span class="item-type-code">pMegalodon</span>
+                                                </div>
+                                            </label>
+                                            <label class="item-type-option">
+                                                <input type="radio" name="give-item-type" value="pCaught">
+                                                <div class="item-type-card">
+                                                    <span class="item-type-icon">🪱</span>
+                                                    <span class="item-type-name">Cacing/Umpan</span>
+                                                    <span class="item-type-code">pCaught</span>
+                                                </div>
+                                            </label>
+                                            <label class="item-type-option">
+                                                <input type="radio" name="give-item-type" value="pPadi">
+                                                <div class="item-type-card">
+                                                    <span class="item-type-icon">🌾</span>
+                                                    <span class="item-type-name">Padi</span>
+                                                    <span class="item-type-code">pPadi</span>
+                                                </div>
+                                            </label>
+                                            <label class="item-type-option">
+                                                <input type="radio" name="give-item-type" value="pAyam">
+                                                <div class="item-type-card">
+                                                    <span class="item-type-icon">🐔</span>
+                                                    <span class="item-type-name">Ayam</span>
+                                                    <span class="item-type-code">pAyam</span>
+                                                </div>
+                                            </label>
+                                            <label class="item-type-option">
+                                                <input type="radio" name="give-item-type" value="pSemen">
+                                                <div class="item-type-card">
+                                                    <span class="item-type-icon">🏗️</span>
+                                                    <span class="item-type-name">Semen</span>
+                                                    <span class="item-type-code">pSemen</span>
+                                                </div>
+                                            </label>
+                                            <label class="item-type-option">
+                                                <input type="radio" name="give-item-type" value="pEmas">
+                                                <div class="item-type-card">
+                                                    <span class="item-type-icon">💎</span>
+                                                    <span class="item-type-name">Emas</span>
+                                                    <span class="item-type-code">pEmas</span>
+                                                </div>
+                                            </label>
+                                            <label class="item-type-option">
+                                                <input type="radio" name="give-item-type" value="pSusu">
+                                                <div class="item-type-card">
+                                                    <span class="item-type-icon">🥛</span>
+                                                    <span class="item-type-name">Susu</span>
+                                                    <span class="item-type-code">pSusu</span>
+                                                </div>
+                                            </label>
+                                            <label class="item-type-option">
+                                                <input type="radio" name="give-item-type" value="pMinyak">
+                                                <div class="item-type-card">
+                                                    <span class="item-type-icon">🛢️</span>
+                                                    <span class="item-type-name">Minyak</span>
+                                                    <span class="item-type-code">pMinyak</span>
+                                                </div>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div id="give-item-preview" class="give-preview" style="display:none;">
+                                        <i class="fas fa-info-circle"></i>
+                                        Preview: <strong id="give-preview-text"></strong>
+                                    </div>
+                                    <button type="submit" class="btn-primary give-submit-btn">
+                                        <i class="fas fa-gift"></i> Give Items
+                                    </button>
+                                </form>
+                            </div>
+
+                            <!-- History Tab -->
+                            <div class="give-tab-content" id="give-tab-history">
+                                <div class="history-header-controls">
+                                    <div class="history-filter-bar">
+                                        <input type="text" id="give-history-username-filter" placeholder="Filter by username...">
+                                        <select id="give-history-item-filter">
+                                            <option value="">Semua Item</option>
+                                            <option value="pBatu">Batu Bersih</option>
+                                            <option value="pBatuk">Batu Kotor</option>
+                                            <option value="pFish">Ikan Biasa</option>
+                                            <option value="pPenyu">Penyu</option>
+                                            <option value="pDolphin">Dolphin</option>
+                                            <option value="pHiu">Ikan Hiu</option>
+                                            <option value="pMegalodon">Ikan Megalodon</option>
+                                            <option value="pCaught">Cacing/Umpan</option>
+                                            <option value="pPadi">Padi</option>
+                                            <option value="pAyam">Ayam</option>
+                                            <option value="pSemen">Semen</option>
+                                            <option value="pEmas">Emas</option>
+                                            <option value="pSusu">Susu</option>
+                                            <option value="pMinyak">Minyak</option>
+                                        </select>
+                                        <button id="load-give-history-btn" class="btn-primary">
+                                            <i class="fas fa-search"></i> Filter
+                                        </button>
+                                        <button id="refresh-give-history-btn" class="btn-secondary">
+                                            <i class="fas fa-sync"></i> Refresh
+                                        </button>
+                                    </div>
+                                </div>
+                                <div id="give-history-list" class="give-history-list"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Item Template Modal -->
+            <div id="item-template-modal" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2 id="item-template-modal-title">Create Item Template</h2>
+                        <span class="close-modal">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <form id="item-template-form">
+                            <input type="hidden" id="template-id">
+                            <div class="form-group">
+                                <label>Item Code (e.g., pBatu)</label>
+                                <input type="text" id="template-code" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Item Name</label>
+                                <input type="text" id="template-name" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Category</label>
+                                <select id="template-category" required>
+                                    <option value="legal">Legal</option>
+                                    <option value="illegal">Illegal</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Type</label>
+                                <input type="text" id="template-type" placeholder="e.g., resource, food, tool">
+                            </div>
+                            <div class="form-group">
+                                <label>Max Limit</label>
+                                <input type="number" id="template-max-limit" value="999" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Rarity</label>
+                                <select id="template-rarity" required>
+                                    <option value="common">Common</option>
+                                    <option value="uncommon">Uncommon</option>
+                                    <option value="rare">Rare</option>
+                                    <option value="epic">Epic</option>
+                                    <option value="legendary">Legendary</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Base Price</label>
+                                <input type="number" id="template-base-price" value="0" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Description</label>
+                                <textarea id="template-description" rows="3"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label>
+                                    <input type="checkbox" id="template-tradeable" checked>
+                                    Tradeable
+                                </label>
+                            </div>
+                            <button type="submit" class="btn-primary">
+                                <i class="fas fa-save"></i> Save Template
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Item Details Modal -->
+    <div id="item-details-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="item-details-name">Item Details</h2>
+                <span class="close-modal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="item-details-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="notification" class="notification"></div>
+
+    <!-- PWA Update Banner (akan muncul otomatis saat ada update) -->
+    <div id="pwa-update-container"></div>
+
+    <script src="pwa.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

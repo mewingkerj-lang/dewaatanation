@@ -1,0 +1,51 @@
+{
+  "name": "Dewata NationRP Control Panel",
+  "short_name": "Dewata RP",
+  "description": "Control Panel untuk Server Dewata Nation Roleplay - Manage items, marketplace, guide, dan lebih banyak lagi",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f0f23",
+  "theme_color": "#6366f1",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/icons/iconme.png",
+      "sizes": "72x72 96x96 128x128 144x144 152x152 192x192 384x384 512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["games", "social", "productivity"],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "short_name": "Home",
+      "description": "Open Dashboard",
+      "url": "/?page=dashboard",
+      "icons": [{ "src": "/icons/iconme.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Marketplace",
+      "short_name": "Market",
+      "description": "Browse Marketplace",
+      "url": "/?page=marketplace",
+      "icons": [{ "src": "/icons/iconme.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Inventory",
+      "short_name": "Items",
+      "description": "View Inventory",
+      "url": "/?page=inventory",
+      "icons": [{ "src": "/icons/iconme.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Chat",
+      "short_name": "Chat",
+      "description": "Open Global Chat",
+      "url": "/?page=chat-global",
+      "icons": [{ "src": "/icons/iconme.png", "sizes": "96x96" }]
+    }
+  ],
+  "prefer_related_applications": false
+}
