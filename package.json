@@ -1,0 +1,13 @@
+{
+  "name": "dewata-panel",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "scripts": {
+    "start": "ts-node index.ts",
+    "build": "tsc",
+    "dev": "ts-node index.ts"
+  },
+  "engines": {
+    "node": ">=16.x"
+  }
+}
