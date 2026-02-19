@@ -1,5 +1,8 @@
-# Object file
-*.o
-
-# Ada Library Information
-*.ali
+cat > .gitignore << 'EOF'
+node_modules/
+.env
+*.log
+.DS_Store
+public/uploads/*
+!public/uploads/.gitkeep
+EOF
