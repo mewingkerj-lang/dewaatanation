@@ -1,4 +1,3 @@
-cat > railway.toml << 'EOF'
 [build]
 builder = "nixpacks"
 
@@ -8,4 +7,3 @@ healthcheckPath = "/"
 healthcheckTimeout = 100
 restartPolicyType = "always"
 restartPolicyMaxRetries = 10
-EOF
