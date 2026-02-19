@@ -34,11 +34,10 @@ const upload = multer({ storage });
 
 // Database configuration
 const dbConfig = {
-  host: process.env.MYSQL_HOST || "208.84.103.75",
-  user: process.env.MYSQL_USER || "u1649_NtHPQzNRvz",
-  password: process.env.MYSQL_PASSWORD || "qJHEEZZraPLuQGGOtHPSvWT=",
-  database: process.env.MYSQL_DATABASE || "s1649_Dewata",
-  port: parseInt(process.env.MYSQL_PORT || "3306")
+  host: "208.84.103.75",
+  user: "u1649_NtHPQzNRvz",
+  password: "qJHEEZZraPLuQGGOtHPSvWT=",
+  database: "s1649_Dewata"
 };
 
 // Create database connection pool
