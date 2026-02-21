@@ -1,2511 +1,1280 @@
-import express, { Request, Response } from 'express';
-import mysql from 'mysql2/promise';
-import session from 'express-session';
-import bodyParser from 'body-parser';
-import axios from 'axios';
-import multer from 'multer';
-import path from 'path';
-import cors from 'cors';
-import crypto from 'crypto';
+import express, { Request, Response } from "express";
+import mysql from "mysql2/promise";
+import crypto from "crypto";
+import session from "express-session";
+import bodyParser from "body-parser";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
-app.use(cors());
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(express.static('public'));
-app.use(session({
-  secret: 'dewata-nationrp-secret-key-2024',
-  resave: false,
-  saveUninitialized: false,
-  cookie: { secure: false, maxAge: 24 * 60 * 60 * 1000 }
-}));
-
-// Multer setup for file uploads
-const storage = multer.diskStorage({
-  destination: './public/uploads/',
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + '-' + file.originalname);
-  }
-});
-const upload = multer({ storage });
-
 // Database configuration
 const dbConfig = {
-  host: "208.84.103.75",
-  user: "u1649_NtHPQzNRvz",
-  password: "qJHEEZZraPLuQGGOtHPSvWT=",
-  database: "s1649_Dewata"
+  host: process.env.DB_HOST || "208.84.103.75",
+  user: process.env.DB_USER || "u1649_NtHPQzNRvz",
+  password: process.env.DB_PASSWORD || "qJHEEZZraPLuQGGOtHPSvWT=",
+  database: process.env.DB_NAME || "s1649_Dewata",
+  port: parseInt(process.env.DB_PORT || "3306"),
 };
 
-// Create database connection pool
-const pool = mysql.createPool({
-  ...dbConfig,
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
-});
+let db: mysql.Connection | null = null;
 
-// MD5 Hash function
-function MD5_Hash(str: string): string {
-  return crypto.createHash('md5').update(str).digest('hex');
-}
-
-// Hashit function (dari SAMP)
-function hashit(salt: string, password: string): string {
-  const step3 = MD5_Hash(salt) + MD5_Hash(password);
-  const step4 = MD5_Hash(step3.toLowerCase());
-  return step4.toLowerCase();
-}
-
-// Session type declaration
-declare module 'express-session' {
-  interface SessionData {
-    user?: {
-      username: string;
-      id: number;
-    };
-    loginTime?: number;
-  }
-}
-
-// Initialize database tables
-async function initDatabase() {
-  const connection = await pool.getConnection();
+async function connectDB() {
   try {
-    // Create whitelist_player table
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS whitelist_player (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        Name VARCHAR(50) UNIQUE NOT NULL,
-        phone VARCHAR(20) UNIQUE NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    // Create admins_website table
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS admins_website (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        aName VARCHAR(50) UNIQUE NOT NULL,
-        aLevel INT NOT NULL,
-        aKey VARCHAR(100) NOT NULL
-      )
-    `);
-
-    // Create marketplace table
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS marketplace (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        photo_url VARCHAR(255),
-        username VARCHAR(50) NOT NULL,
-        product_name VARCHAR(100) NOT NULL,
-        product_type ENUM('legal', 'illegal') NOT NULL,
-        price INT NOT NULL,
-        phone VARCHAR(20) NOT NULL,
-        samp_id INT NOT NULL,
-        status ENUM('active', 'sold') DEFAULT 'active',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        INDEX idx_status (status)
-      )
-    `);
-
-    // Create market_digital table for houses, business, vehicles, motorcycles
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS market_digital (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        photo_url VARCHAR(255),
-        username VARCHAR(50) NOT NULL,
-        asset_name VARCHAR(100) NOT NULL,
-        asset_type ENUM('house', 'business', 'vehicle', 'motorcycle') NOT NULL,
-        description TEXT,
-        price INT NOT NULL,
-        location VARCHAR(255),
-        phone VARCHAR(20) NOT NULL,
-        samp_id INT NOT NULL,
-        features JSON,
-        status ENUM('active', 'sold', 'reserved') DEFAULT 'active',
-        views INT DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        INDEX idx_asset_type (asset_type),
-        INDEX idx_status (status),
-        INDEX idx_price (price)
-      )
-    `);
-
-    // Create item_templates table (for admin item manager)
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS item_templates (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        item_code VARCHAR(50) UNIQUE NOT NULL,
-        item_name VARCHAR(100) NOT NULL,
-        item_category ENUM('legal', 'illegal') NOT NULL,
-        item_type VARCHAR(50),
-        icon_url VARCHAR(255),
-        description TEXT,
-        max_limit INT DEFAULT 999,
-        is_tradeable BOOLEAN DEFAULT TRUE,
-        rarity ENUM('common', 'uncommon', 'rare', 'epic', 'legendary') DEFAULT 'common',
-        base_price INT DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-      )
-    `);
-
-    // Create item_spawn_history table
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS item_spawn_history (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        item_code VARCHAR(50) NOT NULL,
-        username VARCHAR(50) NOT NULL,
-        quantity INT NOT NULL,
-        spawned_by VARCHAR(50) NOT NULL,
-        reason VARCHAR(255),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        INDEX idx_item_code (item_code),
-        INDEX idx_username (username)
-      )
-    `);
-
-    // Insert default item templates
-    await connection.query(`
-      INSERT IGNORE INTO item_templates (item_code, item_name, item_category, item_type, max_limit, rarity, base_price) VALUES
-      ('pBatu', 'Batu Bersih', 'legal', 'resource', 999, 'common', 5000),
-      ('pBatuk', 'Batu Kotor', 'legal', 'resource', 999, 'common', 3000),
-      ('pFish', 'Ikan Biasa', 'legal', 'food', 999, 'common', 2000),
-      ('pPenyu', 'Penyu', 'legal', 'food', 999, 'uncommon', 15000),
-      ('pDolphin', 'Dolphin', 'legal', 'food', 999, 'rare', 25000),
-      ('pHiu', 'Ikan Hiu', 'legal', 'food', 999, 'rare', 30000),
-      ('pMegalodon', 'Ikan Megalodon', 'legal', 'food', 999, 'legendary', 100000),
-      ('pCaught', 'Cacing/Umpan', 'legal', 'tool', 999, 'common', 500),
-      ('pPadi', 'Padi', 'legal', 'resource', 999, 'common', 3000),
-      ('pAyam', 'Ayam', 'legal', 'food', 999, 'common', 5000),
-      ('pSemen', 'Semen', 'legal', 'resource', 999, 'common', 8000),
-      ('pEmas', 'Emas', 'legal', 'valuable', 500, 'epic', 50000),
-      ('pSusu', 'Susu', 'legal', 'food', 999, 'common', 4000),
-      ('pMinyak', 'Minyak', 'legal', 'resource', 999, 'uncommon', 10000),
-      ('pDrugs', 'Drugs', 'illegal', 'narcotics', 100, 'rare', 100000),
-      ('pMicin', 'Marijuana', 'illegal', 'narcotics', 100, 'rare', 80000),
-      ('pSteroid', 'Steroid', 'illegal', 'narcotics', 50, 'epic', 150000),
-      ('pComponent', 'Component', 'illegal', 'material', 200, 'uncommon', 20000)
-    `);
-
-    // Create global_chat table
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS global_chat (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        username VARCHAR(50) NOT NULL,
-        message TEXT NOT NULL,
-        photo_url VARCHAR(255),
-        video_url VARCHAR(255),
-        reply_to INT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    // Create private_chat table
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS private_chat (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        sender VARCHAR(50) NOT NULL,
-        receiver VARCHAR(50) NOT NULL,
-        message TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    // Create guides table
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS guides (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        guide_name VARCHAR(100) UNIQUE NOT NULL,
-        captain VARCHAR(50) NOT NULL,
-        representative1 VARCHAR(50),
-        representative2 VARCHAR(50),
-        max_members INT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    // Create guide_members table
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS guide_members (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        guide_id INT NOT NULL,
-        username VARCHAR(50) NOT NULL,
-        role ENUM('captain', 'representative', 'member') NOT NULL,
-        FOREIGN KEY (guide_id) REFERENCES guides(id) ON DELETE CASCADE
-      )
-    `);
-
-    // Create guide_invites table
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS guide_invites (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        guide_id INT NOT NULL,
-        username VARCHAR(50) NOT NULL,
-        expires_at TIMESTAMP NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (guide_id) REFERENCES guides(id) ON DELETE CASCADE
-      )
-    `);
-
-    // Create guide_chat table
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS guide_chat (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        guide_id INT NOT NULL,
-        username VARCHAR(50) NOT NULL,
-        message TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (guide_id) REFERENCES guides(id) ON DELETE CASCADE
-      )
-    `);
-
-    // Create transfer_history table
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS transfer_history (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        sender VARCHAR(50) NOT NULL,
-        receiver VARCHAR(50) NOT NULL,
-        amount INT NOT NULL,
-        transfer_type ENUM('pCash', 'pBank') NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    // Create otp_codes table
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS otp_codes (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        phone VARCHAR(20) NOT NULL,
-        code VARCHAR(6) NOT NULL,
-        expires_at TIMESTAMP NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    // Create blacklist table
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS blacklist (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        username VARCHAR(50) NOT NULL,
-        blocked_user VARCHAR(50) NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    // Create last_message table for delay
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS last_message (
-        username VARCHAR(50) PRIMARY KEY,
-        last_sent TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    // Create faction_members table
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS faction_members (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        username VARCHAR(50) NOT NULL UNIQUE,
-        faction ENUM('godside', 'badside') NOT NULL,
-        job ENUM('police', 'hospital', 'sannews', 'trader', 'grove', 'ballas', 'vagos', 'aztecaz', 'riffa') NOT NULL,
-        rank ENUM('leader', 'co_leader', 'member') DEFAULT 'member',
-        invited_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        is_online BOOLEAN DEFAULT FALSE,
-        last_active TIMESTAMP NULL,
-        INDEX idx_faction (faction),
-        INDEX idx_job (job),
-        INDEX idx_rank (rank),
-        INDEX idx_username (username)
-      )
-    `);
-
-    // Create faction_chat table
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS faction_chat (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        job ENUM('police', 'hospital', 'sannews', 'trader', 'grove', 'ballas', 'vagos', 'aztecaz', 'riffa') NOT NULL,
-        username VARCHAR(50) NOT NULL,
-        message TEXT NOT NULL,
-        message_type ENUM('text', 'photo', 'video') DEFAULT 'text',
-        media_url VARCHAR(500),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        INDEX idx_job (job),
-        INDEX idx_username (username),
-        INDEX idx_created (created_at DESC)
-      )
-    `);
-
-    console.log('Database tables initialized successfully');
-  } catch (error) {
-    console.error('Error initializing database:', error);
-  } finally {
-    connection.release();
-  }
-}
-
-// Check if username format is valid
-function isValidUsername(username: string): boolean {
-  const regex = /^[A-Z][a-z]+_[A-Z][a-z]+$/;
-  return regex.test(username);
-}
-
-// Check if phone format is valid
-function isValidPhone(phone: string): boolean {
-  return phone.startsWith('628') && phone.length >= 10;
-}
-
-// Send OTP via Fonnte
-async function sendOTP(phone: string, code: string): Promise<boolean> {
-  try {
-    const response = await axios.post('https://api.fonnte.com/send', {
-      target: phone,
-      message: `Kode OTP Dewata NationRP: ${code}\nKode akan expired dalam 5 menit.`,
-      countryCode: '62'
-    }, {
-      headers: {
-        'Authorization': 'rAi9rzrezVBFFfe5w1Gp'
-      }
-    });
-    return response.data.status === true;
-  } catch (error) {
-    console.error('Error sending OTP:', error);
+    db = await mysql.createConnection(dbConfig);
+    console.log("✅ Database connected successfully");
+    return true;
+  } catch (err) {
+    console.error("❌ Database connection failed:", err);
     return false;
   }
 }
 
-// API Routes
+// MD5 hash function
+function md5(str: string): string {
+  return crypto.createHash("md5").update(str).digest("hex").toLowerCase();
+}
 
-// Register - Send OTP
-app.post('/api/register/send-otp', async (req: Request, res: Response) => {
-  const { username, phone } = req.body;
+// Replicate SAMP hashit function
+function hashit(salt: string, password: string): string {
+  const step3 = (md5(salt) + md5(password)).toLowerCase();
+  return md5(step3).toLowerCase();
+}
 
-  if (!isValidUsername(username)) {
-    return res.json({ success: false, message: 'Format username salah! Harus seperti: Renzy_Takashi' });
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || "dewatanation-secret-2024",
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: false, maxAge: 24 * 60 * 60 * 1000 },
+  })
+);
+
+// Auth middleware
+function requireAuth(req: Request, res: Response, next: Function) {
+  const sess = req.session as any;
+  if (!sess.authenticated) {
+    return res.status(401).json({ success: false, message: "Unauthorized" });
   }
+  next();
+}
 
-  if (!isValidPhone(phone)) {
-    return res.json({ success: false, message: 'Nomor WhatsApp harus diawali dengan 628' });
+// ========== API ROUTES ==========
+
+// DB Status
+app.get("/api/db-status", async (req, res) => {
+  if (!db) {
+    const connected = await connectDB();
+    return res.json({ connected });
   }
-
-  const connection = await pool.getConnection();
   try {
-    // Check if username already exists in whitelist
-    const [existingUser]: any = await connection.query(
-      'SELECT * FROM whitelist_player WHERE Name = ?',
-      [username]
-    );
-
-    if (existingUser.length > 0) {
-      return res.json({ success: false, message: 'Username sudah terdaftar!' });
-    }
-
-    // Check if phone already exists in whitelist
-    const [existingPhone]: any = await connection.query(
-      'SELECT * FROM whitelist_player WHERE phone = ?',
-      [phone]
-    );
-
-    if (existingPhone.length > 0) {
-      return res.json({ success: false, message: 'Nomor WhatsApp sudah terdaftar!' });
-    }
-
-    // Generate 6 digit OTP
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-
-    // Send OTP
-    const sent = await sendOTP(phone, otpCode);
-    if (!sent) {
-      return res.json({ success: false, message: 'Gagal mengirim OTP' });
-    }
-
-    // Delete old OTP for this phone first
-    await connection.query('DELETE FROM otp_codes WHERE phone = ?', [phone]);
-
-    // Save OTP - biarkan MySQL yang hitung expires_at agar timezone konsisten
-    await connection.query(
-      'INSERT INTO otp_codes (phone, code, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE))',
-      [phone, otpCode]
-    );
-
-    res.json({ success: true, message: 'OTP telah dikirim ke WhatsApp Anda' });
-  } catch (error) {
-    console.error('Error sending OTP:', error);
-    res.json({ success: false, message: 'Terjadi kesalahan server' });
-  } finally {
-    connection.release();
+    await db.ping();
+    res.json({ connected: true });
+  } catch {
+    db = null;
+    res.json({ connected: false });
   }
 });
 
-// Register - Verify OTP
-app.post('/api/register/verify-otp', async (req: Request, res: Response) => {
-  const { username, phone, otp } = req.body;
-
-  const connection = await pool.getConnection();
+// Connect DB
+app.post("/api/db-connect", async (req, res) => {
+  const { host, user, password, database, port } = req.body;
   try {
-    // Gunakan TIMESTAMPDIFF langsung di MySQL agar tidak ada konversi timezone dari Node.js
-    // Kalau sisa waktu >= 0 berarti belum expired
-    const [otpRows]: any = await connection.query(
-      `SELECT *,
-        TIMESTAMPDIFF(SECOND, NOW(), expires_at) AS seconds_left
-       FROM otp_codes
-       WHERE phone = ? AND code = ?
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [phone, otp]
-    );
-
-    if (otpRows.length === 0) {
-      // Bisa salah kode atau belum kirim OTP — bedain pesannya
-      const [phoneRows]: any = await connection.query(
-        'SELECT 1 FROM otp_codes WHERE phone = ? LIMIT 1',
-        [phone]
-      );
-      if (phoneRows.length > 0) {
-        return res.json({ success: false, message: 'Kode OTP salah! Periksa kembali kode yang dikirim.' });
-      }
-      return res.json({ success: false, message: 'Tidak ada OTP untuk nomor ini. Silakan kirim ulang.' });
-    }
-
-    const secondsLeft = otpRows[0].seconds_left;
-
-    // seconds_left < 0 berarti sudah melewati expires_at
-    if (secondsLeft < 0) {
-      await connection.query('DELETE FROM otp_codes WHERE phone = ?', [phone]);
-      return res.json({ success: false, message: 'Kode OTP sudah expired! Silakan kirim ulang kode OTP.' });
-    }
-
-    // OTP valid — daftarkan ke whitelist
-    await connection.query(
-      'INSERT INTO whitelist_player (Name, phone) VALUES (?, ?)',
-      [username, phone]
-    );
-
-    // Hapus OTP yang sudah dipakai
-    await connection.query('DELETE FROM otp_codes WHERE phone = ?', [phone]);
-
-    res.json({ success: true, message: 'Registrasi berhasil! Silakan login.' });
-  } catch (error) {
-    console.error('Error verifying OTP:', error);
-    res.json({ success: false, message: 'Terjadi kesalahan server' });
-  } finally {
-    connection.release();
+    db = await mysql.createConnection({
+      host: host || dbConfig.host,
+      user: user || dbConfig.user,
+      password: password || dbConfig.password,
+      database: database || dbConfig.database,
+      port: parseInt(port) || dbConfig.port,
+    });
+    res.json({ success: true, message: "Database connected!" });
+  } catch (err: any) {
+    res.json({ success: false, message: err.message });
   }
 });
 
-// Login
-app.post('/api/login', async (req: Request, res: Response) => {
+// Login - Step 1: Check account
+app.post("/api/login", async (req, res) => {
+  if (!db) return res.json({ success: false, message: "Database not connected" });
   const { username, password } = req.body;
-
-  const connection = await pool.getConnection();
   try {
-    // Check if user exists in accounts
-    const [users]: any = await connection.query(
-      'SELECT * FROM accounts WHERE pName = ?',
+    const [rows]: any = await db.execute(
+      "SELECT pName, pPassword, pass_salt FROM accounts WHERE pName = ?",
       [username]
     );
+    if (rows.length === 0) return res.json({ success: false, message: "Username tidak ditemukan" });
+    const user = rows[0];
+    const hashed = hashit(user.pass_salt, password);
+    if (hashed !== user.pPassword) return res.json({ success: false, message: "Password salah" });
+    const sess = req.session as any;
+    sess.username = username;
+    sess.step = "admin_key";
+    res.json({ success: true, message: "Password benar, masukkan Admin Key" });
+  } catch (err: any) {
+    res.json({ success: false, message: err.message });
+  }
+});
 
-    if (users.length === 0) {
-      return res.json({ success: false, message: 'Username tidak ditemukan!' });
-    }
-
-    const user = users[0];
-
-    // Check if password is set
-    if (!user.pPassword || user.pPassword === '') {
-      return res.json({ success: false, message: 'Password belum di-set! Silakan hubungi admin.' });
-    }
-
-    // Verify password using hashit
-    const hashedPassword = hashit(user.pass_salt, password);
-    if (hashedPassword !== user.pPassword) {
-      return res.json({ success: false, message: 'Password salah!' });
-    }
-
-    // Check if already logged in (dual account detection)
-    if (req.session.user && req.session.user.username === username) {
-      return res.json({ success: false, message: 'Akun ini sudah login!' });
-    }
-
-    // Set session
-    req.session.user = {
-      username: user.pName,
-      id: user.pID
-    };
-    req.session.loginTime = Date.now();
-
-    res.json({ success: true, message: 'Login berhasil!', username: user.pName });
-  } catch (error) {
-    console.error('Error logging in:', error);
-    res.json({ success: false, message: 'Terjadi kesalahan server' });
-  } finally {
-    connection.release();
+// Login - Step 2: Check admin key
+app.post("/api/verify-admin", async (req, res) => {
+  if (!db) return res.json({ success: false, message: "Database not connected" });
+  const sess = req.session as any;
+  if (!sess.username) return res.json({ success: false, message: "Session expired" });
+  const { adminKey } = req.body;
+  try {
+    const [rows]: any = await db.execute(
+      "SELECT Name, pAdminKey FROM admin WHERE Name = ?",
+      [sess.username]
+    );
+    if (rows.length === 0) return res.json({ success: false, message: "Bukan admin" });
+    if (rows[0].pAdminKey !== adminKey) return res.json({ success: false, message: "Admin key salah" });
+    sess.authenticated = true;
+    sess.adminName = sess.username;
+    res.json({ success: true, message: "Login berhasil!" });
+  } catch (err: any) {
+    res.json({ success: false, message: err.message });
   }
 });
 
 // Logout
-app.post('/api/logout', (req: Request, res: Response) => {
-  req.session.destroy((err) => {
-    if (err) {
-      return res.json({ success: false, message: 'Gagal logout' });
-    }
-    res.json({ success: true, message: 'Logout berhasil' });
-  });
+app.post("/api/logout", (req, res) => {
+  req.session.destroy(() => res.json({ success: true }));
 });
 
-// Get current user
-app.get('/api/user', (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ loggedIn: false });
-  }
-  res.json({ loggedIn: true, username: req.session.user.username });
+// Session check
+app.get("/api/session", (req, res) => {
+  const sess = req.session as any;
+  res.json({ authenticated: !!sess.authenticated, username: sess.adminName });
 });
 
-// Get account info
-app.get('/api/account-info', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const connection = await pool.getConnection();
+// Getcord list
+app.get("/api/getcord", requireAuth, async (req, res) => {
+  if (!db) return res.json({ success: false, message: "DB not connected" });
   try {
-    const [users]: any = await connection.query(
-      `SELECT pID, pName, pLevel, pCash, pBank, pMaskID, 
-              pBatu, pBatuk, pFish, pPenyu, pDolphin, pHiu, pMegalodon, pCaught,
-              pPadi, pAyam, pSemen, pEmas, pSusu, pMinyak,
-              pDrugs, pMicin, pSteroid, pComponent
-       FROM accounts WHERE pName = ?`,
-      [req.session.user.username]
-    );
-
-    if (users.length === 0) {
-      return res.json({ success: false, message: 'User not found' });
-    }
-
-    res.json({ success: true, data: users[0] });
-  } catch (error) {
-    console.error('Error fetching account info:', error);
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
+    const [rows]: any = await db.execute("SELECT id, Name, X, Y, Z, A FROM getcord ORDER BY id");
+    res.json({ success: true, data: rows });
+  } catch (err: any) {
+    res.json({ success: false, message: err.message });
   }
 });
 
-// Check if user is admin
-app.get('/api/check-admin', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ isAdmin: false });
-  }
-
-  const connection = await pool.getConnection();
+// Delete getcord
+app.delete("/api/getcord/:id", requireAuth, async (req, res) => {
+  if (!db) return res.json({ success: false, message: "DB not connected" });
   try {
-    const [admins]: any = await connection.query(
-      'SELECT aLevel FROM admins_website WHERE aName = ?',
-      [req.session.user.username]
-    );
-
-    res.json({ isAdmin: admins.length > 0, level: admins.length > 0 ? admins[0].aLevel : 0 });
-  } catch (error) {
-    res.json({ isAdmin: false });
-  } finally {
-    connection.release();
-  }
-});
-
-// Verify admin key
-app.post('/api/verify-admin-key', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { key } = req.body;
-  const connection = await pool.getConnection();
-  try {
-    const [admins]: any = await connection.query(
-      'SELECT * FROM admins_website WHERE aName = ? AND aKey = ?',
-      [req.session.user.username, key]
-    );
-
-    if (admins.length === 0) {
-      return res.json({ success: false, message: 'Key salah!' });
-    }
-
-    res.json({ success: true, level: admins[0].aLevel });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Marketplace - Create Product
-app.post('/api/marketplace/create', upload.single('photo'), async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { product_name, product_type, price, phone, samp_id } = req.body;
-  const photo_url = req.file ? `/uploads/${req.file.filename}` : null;
-
-  if (parseInt(price) < 5000000 || parseInt(price) > 300000000) {
-    return res.json({ success: false, message: 'Harga harus antara 5jt - 300jt' });
-  }
-
-  const connection = await pool.getConnection();
-  try {
-    await connection.query(
-      'INSERT INTO marketplace (photo_url, username, product_name, product_type, price, phone, samp_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [photo_url, req.session.user.username, product_name, product_type, price, phone, samp_id]
-    );
-
-    res.json({ success: true, message: 'Produk berhasil ditambahkan!' });
-  } catch (error) {
-    console.error('Error creating product:', error);
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Marketplace - Get Products
-app.get('/api/marketplace', async (req: Request, res: Response) => {
-  const { type, search } = req.query;
-  const connection = await pool.getConnection();
-  try {
-    let query = 'SELECT * FROM marketplace WHERE 1=1';
-    const params: any[] = [];
-
-    if (type && type !== 'all') {
-      query += ' AND product_type = ?';
-      params.push(type);
-    }
-
-    if (search) {
-      query += ' AND product_name LIKE ?';
-      params.push(`%${search}%`);
-    }
-
-    query += ' ORDER BY created_at DESC';
-
-    const [products] = await connection.query(query, params);
-    res.json({ success: true, products });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Global Chat - Send Message
-app.post('/api/chat/global/send', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { message, reply_to } = req.body;
-  const username = req.session.user.username;
-
-  const connection = await pool.getConnection();
-  try {
-    // Check last message time (3 seconds delay)
-    const [lastMsg]: any = await connection.query(
-      'SELECT * FROM last_message WHERE username = ? AND last_sent > DATE_SUB(NOW(), INTERVAL 3 SECOND)',
-      [username]
-    );
-
-    if (lastMsg.length > 0) {
-      return res.json({ success: false, message: 'Tunggu 3 detik untuk mengirim pesan lagi!' });
-    }
-
-    // Insert message
-    await connection.query(
-      'INSERT INTO global_chat (username, message, reply_to) VALUES (?, ?, ?)',
-      [username, message, reply_to || null]
-    );
-
-    // Update last message time
-    await connection.query(
-      'INSERT INTO last_message (username, last_sent) VALUES (?, NOW()) ON DUPLICATE KEY UPDATE last_sent = NOW()',
-      [username]
-    );
-
-    res.json({ success: true, message: 'Pesan terkirim!' });
-  } catch (error) {
-    console.error('Error sending message:', error);
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Global Chat - Get Messages
-app.get('/api/chat/global', async (req: Request, res: Response) => {
-  const connection = await pool.getConnection();
-  try {
-    const [messages]: any = await connection.query(`
-      SELECT gc.*, 
-             COALESCE(
-               (SELECT aLevel FROM admins_website WHERE aName = gc.username),
-               0
-             ) as admin_level
-      FROM global_chat gc
-      ORDER BY created_at DESC
-      LIMIT 100
-    `);
-
-    res.json({ success: true, messages });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Global Chat - Clear All
-app.post('/api/chat/global/clear', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const connection = await pool.getConnection();
-  try {
-    await connection.query('DELETE FROM global_chat');
-    res.json({ success: true, message: 'Semua chat global telah dihapus!' });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Transfer - Send Money
-app.post('/api/transfer/send', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { receiver, amount, transfer_type } = req.body;
-  const sender = req.session.user.username;
-
-  const connection = await pool.getConnection();
-  try {
-    await connection.beginTransaction();
-
-    // Check if receiver exists
-    const [receivers]: any = await connection.query(
-      'SELECT * FROM accounts WHERE pName = ?',
-      [receiver]
-    );
-
-    if (receivers.length === 0) {
-      await connection.rollback();
-      return res.json({ success: false, message: 'Penerima tidak ditemukan!' });
-    }
-
-    // Check sender balance
-    const [senders]: any = await connection.query(
-      'SELECT * FROM accounts WHERE pName = ?',
-      [sender]
-    );
-
-    const senderData = senders[0];
-    const currentBalance = transfer_type === 'pCash' ? senderData.pCash : senderData.pBank;
-
-    if (currentBalance < amount) {
-      await connection.rollback();
-      return res.json({ success: false, message: 'Saldo tidak cukup!' });
-    }
-
-    // Deduct from sender
-    const deductField = transfer_type === 'pCash' ? 'pCash' : 'pBank';
-    await connection.query(
-      `UPDATE accounts SET ${deductField} = ${deductField} - ? WHERE pName = ?`,
-      [amount, sender]
-    );
-
-    // Add to receiver
-    await connection.query(
-      `UPDATE accounts SET ${deductField} = ${deductField} + ? WHERE pName = ?`,
-      [amount, receiver]
-    );
-
-    // Record transfer history
-    await connection.query(
-      'INSERT INTO transfer_history (sender, receiver, amount, transfer_type) VALUES (?, ?, ?, ?)',
-      [sender, receiver, amount, transfer_type]
-    );
-
-    await connection.commit();
-    res.json({ success: true, message: 'Transfer berhasil!' });
-  } catch (error) {
-    await connection.rollback();
-    console.error('Error transferring:', error);
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Transfer - Get History Sent
-app.get('/api/transfer/history-sent', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const connection = await pool.getConnection();
-  try {
-    const [history] = await connection.query(
-      'SELECT * FROM transfer_history WHERE sender = ? ORDER BY created_at DESC',
-      [req.session.user.username]
-    );
-
-    res.json({ success: true, history });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Transfer - Get History Received
-app.get('/api/transfer/history-received', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const connection = await pool.getConnection();
-  try {
-    const [history] = await connection.query(
-      'SELECT * FROM transfer_history WHERE receiver = ? ORDER BY created_at DESC',
-      [req.session.user.username]
-    );
-
-    res.json({ success: true, history });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Guide - Create Guide
-app.post('/api/guide/create', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { guide_name, max_members, representative1, representative2 } = req.body;
-  const captain = req.session.user.username;
-
-  if (!isValidUsername(representative1) || !isValidUsername(representative2)) {
-    return res.json({ success: false, message: 'Format username representative salah!' });
-  }
-
-  const connection = await pool.getConnection();
-  try {
-    // Check if representatives exist
-    const [rep1]: any = await connection.query('SELECT * FROM accounts WHERE pName = ?', [representative1]);
-    const [rep2]: any = await connection.query('SELECT * FROM accounts WHERE pName = ?', [representative2]);
-
-    if (rep1.length === 0 || rep2.length === 0) {
-      return res.json({ success: false, message: 'Username representative tidak ditemukan!' });
-    }
-
-    // Create guide
-    const [result]: any = await connection.query(
-      'INSERT INTO guides (guide_name, captain, representative1, representative2, max_members) VALUES (?, ?, ?, ?, ?)',
-      [guide_name, captain, representative1, representative2, max_members]
-    );
-
-    const guideId = result.insertId;
-
-    // Add captain and representatives as members
-    await connection.query(
-      'INSERT INTO guide_members (guide_id, username, role) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?)',
-      [guideId, captain, 'captain', guideId, representative1, 'representative', guideId, representative2, 'representative']
-    );
-
-    res.json({ success: true, message: 'Guide berhasil dibuat!' });
-  } catch (error) {
-    console.error('Error creating guide:', error);
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Guide - Invite Member
-app.post('/api/guide/invite', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { guide_id, username } = req.body;
-
-  const connection = await pool.getConnection();
-  try {
-    // Check if user is captain or representative
-    const [members]: any = await connection.query(
-      'SELECT * FROM guide_members WHERE guide_id = ? AND username = ? AND role IN ("captain", "representative")',
-      [guide_id, req.session.user.username]
-    );
-
-    if (members.length === 0) {
-      return res.json({ success: false, message: 'Hanya kapten/wakil yang bisa invite!' });
-    }
-
-    // Check if username exists
-    const [users]: any = await connection.query('SELECT * FROM accounts WHERE pName = ?', [username]);
-    if (users.length === 0) {
-      return res.json({ success: false, message: 'Username tidak ditemukan!' });
-    }
-
-    // Create invite (expires in 5 days)
-    const expiresAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
-    await connection.query(
-      'INSERT INTO guide_invites (guide_id, username, expires_at) VALUES (?, ?, ?)',
-      [guide_id, username, expiresAt]
-    );
-
-    res.json({ success: true, message: 'Invite terkirim!' });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Guide - Get My Guides
-app.get('/api/guide/my-guides', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const connection = await pool.getConnection();
-  try {
-    const [guides] = await connection.query(`
-      SELECT g.*, gm.role, 
-             (SELECT COUNT(*) FROM guide_members WHERE guide_id = g.id) as member_count
-      FROM guides g
-      JOIN guide_members gm ON g.id = gm.guide_id
-      WHERE gm.username = ?
-    `, [req.session.user.username]);
-
-    res.json({ success: true, guides });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Guide - Get Guide Details
-app.get('/api/guide/details/:guide_id', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { guide_id } = req.params;
-  const connection = await pool.getConnection();
-  try {
-    // Get guide info
-    const [guides]: any = await connection.query(
-      'SELECT * FROM guides WHERE id = ?',
-      [guide_id]
-    );
-
-    if (guides.length === 0) {
-      return res.json({ success: false, message: 'Guide not found' });
-    }
-
-    // Get members
-    const [members] = await connection.query(
-      'SELECT username, role, joined_at FROM guide_members WHERE guide_id = ? ORDER BY FIELD(role, "captain", "representative", "member"), joined_at',
-      [guide_id]
-    );
-
-    // Get pending invites
-    const [invites] = await connection.query(
-      'SELECT username, expires_at, created_at FROM guide_invites WHERE guide_id = ? AND status = "pending" AND expires_at > NOW()',
-      [guide_id]
-    );
-
-    // Get user role
-    const [userRole]: any = await connection.query(
-      'SELECT role FROM guide_members WHERE guide_id = ? AND username = ?',
-      [guide_id, req.session.user.username]
-    );
-
-    res.json({ 
-      success: true, 
-      guide: guides[0],
-      members,
-      invites,
-      userRole: userRole.length > 0 ? userRole[0].role : null
-    });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Guide - Leave Guide
-app.post('/api/guide/leave', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { guide_id } = req.body;
-  const connection = await pool.getConnection();
-  try {
-    // Check if user is member
-    const [members]: any = await connection.query(
-      'SELECT role FROM guide_members WHERE guide_id = ? AND username = ?',
-      [guide_id, req.session.user.username]
-    );
-
-    if (members.length === 0) {
-      return res.json({ success: false, message: 'Anda bukan anggota guide ini!' });
-    }
-
-    // Cannot leave if captain
-    if (members[0].role === 'captain') {
-      return res.json({ success: false, message: 'Captain tidak bisa keluar! Transfer leadership terlebih dahulu.' });
-    }
-
-    await connection.beginTransaction();
-
-    // Remove from members
-    await connection.query(
-      'DELETE FROM guide_members WHERE guide_id = ? AND username = ?',
-      [guide_id, req.session.user.username]
-    );
-
-    // If representative, update guide table
-    if (members[0].role === 'representative') {
-      const [guide]: any = await connection.query(
-        'SELECT representative1, representative2 FROM guides WHERE id = ?',
-        [guide_id]
-      );
-
-      if (guide[0].representative1 === req.session.user.username) {
-        await connection.query(
-          'UPDATE guides SET representative1 = NULL WHERE id = ?',
-          [guide_id]
-        );
-      } else if (guide[0].representative2 === req.session.user.username) {
-        await connection.query(
-          'UPDATE guides SET representative2 = NULL WHERE id = ?',
-          [guide_id]
-        );
-      }
-    }
-
-    await connection.commit();
-    res.json({ success: true, message: 'Berhasil keluar dari guide!' });
-  } catch (error) {
-    await connection.rollback();
-    console.error('Error leaving guide:', error);
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Guide - Get Pending Invites
-app.get('/api/guide/my-invites', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const connection = await pool.getConnection();
-  try {
-    const [invites] = await connection.query(`
-      SELECT gi.*, g.guide_name, g.captain
-      FROM guide_invites gi
-      JOIN guides g ON gi.guide_id = g.id
-      WHERE gi.username = ? AND gi.status = 'pending' AND gi.expires_at > NOW()
-    `, [req.session.user.username]);
-
-    res.json({ success: true, invites });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Guide - Accept/Reject Invite
-app.post('/api/guide/respond-invite', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { invite_id, action } = req.body; // action: 'accept' or 'reject'
-  const connection = await pool.getConnection();
-  try {
-    // Get invite details
-    const [invites]: any = await connection.query(
-      'SELECT * FROM guide_invites WHERE id = ? AND username = ? AND status = "pending" AND expires_at > NOW()',
-      [invite_id, req.session.user.username]
-    );
-
-    if (invites.length === 0) {
-      return res.json({ success: false, message: 'Invite tidak valid atau sudah expired!' });
-    }
-
-    const invite = invites[0];
-
-    await connection.beginTransaction();
-
-    if (action === 'accept') {
-      // Check member count
-      const [guide]: any = await connection.query(
-        'SELECT max_members FROM guides WHERE id = ?',
-        [invite.guide_id]
-      );
-
-      const [memberCount]: any = await connection.query(
-        'SELECT COUNT(*) as count FROM guide_members WHERE guide_id = ?',
-        [invite.guide_id]
-      );
-
-      if (memberCount[0].count >= guide[0].max_members) {
-        await connection.rollback();
-        return res.json({ success: false, message: 'Guide sudah penuh!' });
-      }
-
-      // Add to members
-      await connection.query(
-        'INSERT INTO guide_members (guide_id, username, role) VALUES (?, ?, ?)',
-        [invite.guide_id, req.session.user.username, 'member']
-      );
-
-      // Update invite status
-      await connection.query(
-        'UPDATE guide_invites SET status = "accepted" WHERE id = ?',
-        [invite_id]
-      );
-
-      await connection.commit();
-      res.json({ success: true, message: 'Berhasil bergabung dengan guide!' });
-    } else {
-      // Update invite status
-      await connection.query(
-        'UPDATE guide_invites SET status = "rejected" WHERE id = ?',
-        [invite_id]
-      );
-
-      await connection.commit();
-      res.json({ success: true, message: 'Invite ditolak!' });
-    }
-  } catch (error) {
-    await connection.rollback();
-    console.error('Error responding to invite:', error);
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Guide - Add Representative
-app.post('/api/guide/add-representative', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { guide_id, username, slot } = req.body; // slot: 1 or 2
-  const connection = await pool.getConnection();
-  try {
-    // Check if user is captain
-    const [userRole]: any = await connection.query(
-      'SELECT role FROM guide_members WHERE guide_id = ? AND username = ?',
-      [guide_id, req.session.user.username]
-    );
-
-    if (userRole.length === 0 || userRole[0].role !== 'captain') {
-      return res.json({ success: false, message: 'Hanya captain yang bisa menambah representative!' });
-    }
-
-    // Check if username exists in accounts
-    const [users]: any = await connection.query(
-      'SELECT * FROM accounts WHERE pName = ?',
-      [username]
-    );
-
-    if (users.length === 0) {
-      return res.json({ success: false, message: 'Username tidak ditemukan!' });
-    }
-
-    // Check if user is member of guide
-    const [members]: any = await connection.query(
-      'SELECT role FROM guide_members WHERE guide_id = ? AND username = ?',
-      [guide_id, username]
-    );
-
-    if (members.length === 0) {
-      return res.json({ success: false, message: 'User bukan anggota guide!' });
-    }
-
-    if (members[0].role === 'captain') {
-      return res.json({ success: false, message: 'Captain tidak bisa dijadikan representative!' });
-    }
-
-    await connection.beginTransaction();
-
-    // Update guide table
-    const field = slot === 1 ? 'representative1' : 'representative2';
-    await connection.query(
-      `UPDATE guides SET ${field} = ? WHERE id = ?`,
-      [username, guide_id]
-    );
-
-    // Update member role
-    await connection.query(
-      'UPDATE guide_members SET role = ? WHERE guide_id = ? AND username = ?',
-      ['representative', guide_id, username]
-    );
-
-    await connection.commit();
-    res.json({ success: true, message: 'Representative berhasil ditambahkan!' });
-  } catch (error) {
-    await connection.rollback();
-    console.error('Error adding representative:', error);
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Guide - Remove Representative
-app.post('/api/guide/remove-representative', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { guide_id, username } = req.body;
-  const connection = await pool.getConnection();
-  try {
-    // Check if user is captain
-    const [userRole]: any = await connection.query(
-      'SELECT role FROM guide_members WHERE guide_id = ? AND username = ?',
-      [guide_id, req.session.user.username]
-    );
-
-    if (userRole.length === 0 || userRole[0].role !== 'captain') {
-      return res.json({ success: false, message: 'Hanya captain yang bisa menghapus representative!' });
-    }
-
-    await connection.beginTransaction();
-
-    // Get guide info
-    const [guide]: any = await connection.query(
-      'SELECT representative1, representative2 FROM guides WHERE id = ?',
-      [guide_id]
-    );
-
-    // Update guide table
-    if (guide[0].representative1 === username) {
-      await connection.query(
-        'UPDATE guides SET representative1 = NULL WHERE id = ?',
-        [guide_id]
-      );
-    } else if (guide[0].representative2 === username) {
-      await connection.query(
-        'UPDATE guides SET representative2 = NULL WHERE id = ?',
-        [guide_id]
-      );
-    } else {
-      await connection.rollback();
-      return res.json({ success: false, message: 'User bukan representative!' });
-    }
-
-    // Update member role to member
-    await connection.query(
-      'UPDATE guide_members SET role = ? WHERE guide_id = ? AND username = ?',
-      ['member', guide_id, username]
-    );
-
-    await connection.commit();
-    res.json({ success: true, message: 'Representative berhasil dihapus!' });
-  } catch (error) {
-    await connection.rollback();
-    console.error('Error removing representative:', error);
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Guide - Send Chat
-app.post('/api/guide/chat/send', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { guide_id, message } = req.body;
-
-  const connection = await pool.getConnection();
-  try {
-    // Check if user is member
-    const [members]: any = await connection.query(
-      'SELECT * FROM guide_members WHERE guide_id = ? AND username = ?',
-      [guide_id, req.session.user.username]
-    );
-
-    if (members.length === 0) {
-      return res.json({ success: false, message: 'Anda bukan anggota guide ini!' });
-    }
-
-    // Check delay (5 seconds)
-    const [lastMsg]: any = await connection.query(
-      'SELECT * FROM last_message WHERE username = ? AND last_sent > DATE_SUB(NOW(), INTERVAL 5 SECOND)',
-      [req.session.user.username]
-    );
-
-    if (lastMsg.length > 0) {
-      return res.json({ success: false, message: 'Tunggu 5 detik untuk mengirim pesan lagi!' });
-    }
-
-    // Insert message
-    await connection.query(
-      'INSERT INTO guide_chat (guide_id, username, message) VALUES (?, ?, ?)',
-      [guide_id, req.session.user.username, message]
-    );
-
-    // Update last message time
-    await connection.query(
-      'INSERT INTO last_message (username, last_sent) VALUES (?, NOW()) ON DUPLICATE KEY UPDATE last_sent = NOW()',
-      [req.session.user.username]
-    );
-
-    res.json({ success: true, message: 'Pesan terkirim!' });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Guide - Change Leader
-app.post('/api/guide/change-leader', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { guide_id, new_leader } = req.body;
-  const connection = await pool.getConnection();
-  try {
-    // Check if user is captain
-    const [userRole]: any = await connection.query(
-      'SELECT role FROM guide_members WHERE guide_id = ? AND username = ?',
-      [guide_id, req.session.user.username]
-    );
-
-    if (userRole.length === 0 || userRole[0].role !== 'captain') {
-      return res.json({ success: false, message: 'Hanya captain yang bisa transfer leadership!' });
-    }
-
-    // Check if new leader is member
-    const [newLeaderRole]: any = await connection.query(
-      'SELECT role FROM guide_members WHERE guide_id = ? AND username = ?',
-      [guide_id, new_leader]
-    );
-
-    if (newLeaderRole.length === 0) {
-      return res.json({ success: false, message: 'User bukan anggota guide!' });
-    }
-
-    await connection.beginTransaction();
-
-    // Update old captain to member
-    await connection.query(
-      'UPDATE guide_members SET role = ? WHERE guide_id = ? AND username = ?',
-      ['member', guide_id, req.session.user.username]
-    );
-
-    // Update new captain
-    await connection.query(
-      'UPDATE guide_members SET role = ? WHERE guide_id = ? AND username = ?',
-      ['captain', guide_id, new_leader]
-    );
-
-    // Update guide table
-    await connection.query(
-      'UPDATE guides SET captain = ? WHERE id = ?',
-      [new_leader, guide_id]
-    );
-
-    // If new leader was representative, remove from rep position
-    const [guide]: any = await connection.query(
-      'SELECT representative1, representative2 FROM guides WHERE id = ?',
-      [guide_id]
-    );
-
-    if (guide[0].representative1 === new_leader) {
-      await connection.query(
-        'UPDATE guides SET representative1 = NULL WHERE id = ?',
-        [guide_id]
-      );
-    } else if (guide[0].representative2 === new_leader) {
-      await connection.query(
-        'UPDATE guides SET representative2 = NULL WHERE id = ?',
-        [guide_id]
-      );
-    }
-
-    await connection.commit();
-    res.json({ success: true, message: 'Leadership berhasil ditransfer!' });
-  } catch (error) {
-    await connection.rollback();
-    console.error('Error changing leader:', error);
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Guide - Remove Guide (Delete)
-app.post('/api/guide/remove', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { guide_id } = req.body;
-  const connection = await pool.getConnection();
-  try {
-    // Check if user is captain
-    const [userRole]: any = await connection.query(
-      'SELECT role FROM guide_members WHERE guide_id = ? AND username = ?',
-      [guide_id, req.session.user.username]
-    );
-
-    if (userRole.length === 0 || userRole[0].role !== 'captain') {
-      return res.json({ success: false, message: 'Hanya captain yang bisa menghapus guide!' });
-    }
-
-    // Delete guide (cascade will delete members, invites, and chat)
-    await connection.query('DELETE FROM guides WHERE id = ?', [guide_id]);
-
-    res.json({ success: true, message: 'Guide berhasil dihapus!' });
-  } catch (error) {
-    console.error('Error removing guide:', error);
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Guide - Kick Member
-app.post('/api/guide/kick-member', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { guide_id, username } = req.body;
-  const connection = await pool.getConnection();
-  try {
-    // Check if user is captain or representative
-    const [userRole]: any = await connection.query(
-      'SELECT role FROM guide_members WHERE guide_id = ? AND username = ?',
-      [guide_id, req.session.user.username]
-    );
-
-    if (userRole.length === 0 || !['captain', 'representative'].includes(userRole[0].role)) {
-      return res.json({ success: false, message: 'Hanya captain/representative yang bisa kick member!' });
-    }
-
-    // Check target role
-    const [targetRole]: any = await connection.query(
-      'SELECT role FROM guide_members WHERE guide_id = ? AND username = ?',
-      [guide_id, username]
-    );
-
-    if (targetRole.length === 0) {
-      return res.json({ success: false, message: 'User bukan anggota guide!' });
-    }
-
-    if (targetRole[0].role === 'captain') {
-      return res.json({ success: false, message: 'Tidak bisa kick captain!' });
-    }
-
-    // Representative can only kick regular members
-    if (userRole[0].role === 'representative' && targetRole[0].role === 'representative') {
-      return res.json({ success: false, message: 'Representative tidak bisa kick representative lain!' });
-    }
-
-    await connection.beginTransaction();
-
-    // Remove from members
-    await connection.query(
-      'DELETE FROM guide_members WHERE guide_id = ? AND username = ?',
-      [guide_id, username]
-    );
-
-    // If target was representative, update guide table
-    if (targetRole[0].role === 'representative') {
-      const [guide]: any = await connection.query(
-        'SELECT representative1, representative2 FROM guides WHERE id = ?',
-        [guide_id]
-      );
-
-      if (guide[0].representative1 === username) {
-        await connection.query(
-          'UPDATE guides SET representative1 = NULL WHERE id = ?',
-          [guide_id]
-        );
-      } else if (guide[0].representative2 === username) {
-        await connection.query(
-          'UPDATE guides SET representative2 = NULL WHERE id = ?',
-          [guide_id]
-        );
-      }
-    }
-
-    await connection.commit();
-    res.json({ success: true, message: 'Member berhasil di-kick!' });
-  } catch (error) {
-    await connection.rollback();
-    console.error('Error kicking member:', error);
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Guide - Get Chat
-app.get('/api/guide/chat/:guide_id', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { guide_id } = req.params;
-
-  const connection = await pool.getConnection();
-  try {
-    const [messages]: any = await connection.query(`
-      SELECT gc.*, gm.role
-      FROM guide_chat gc
-      JOIN guide_members gm ON gc.guide_id = gm.guide_id AND gc.username = gm.username
-      WHERE gc.guide_id = ?
-      ORDER BY gc.created_at DESC
-      LIMIT 100
-    `, [guide_id]);
-
-    res.json({ success: true, messages });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Admin - Add/Remove Money
-app.post('/api/admin/manage-money', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { username, amount, type, action } = req.body;
-
-  const connection = await pool.getConnection();
-  try {
-    // Check if admin
-    const [admins]: any = await connection.query(
-      'SELECT * FROM admins_website WHERE aName = ?',
-      [req.session.user.username]
-    );
-
-    if (admins.length === 0) {
-      return res.json({ success: false, message: 'Unauthorized' });
-    }
-
-    // Check if target user exists
-    const [users]: any = await connection.query(
-      'SELECT * FROM accounts WHERE pName = ?',
-      [username]
-    );
-
-    if (users.length === 0) {
-      return res.json({ success: false, message: 'Username tidak ditemukan!' });
-    }
-
-    const operator = action === 'add' ? '+' : '-';
-    const field = type === 'cash' ? 'pCash' : 'pBank';
-
-    await connection.query(
-      `UPDATE accounts SET ${field} = ${field} ${operator} ? WHERE pName = ?`,
-      [amount, username]
-    );
-
-    res.json({ success: true, message: `Berhasil ${action === 'add' ? 'menambahkan' : 'mengurangi'} money!` });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Admin - Delete Account
-app.post('/api/admin/delete-account', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { username } = req.body;
-
-  const connection = await pool.getConnection();
-  try {
-    // Check if admin
-    const [admins]: any = await connection.query(
-      'SELECT * FROM admins_website WHERE aName = ?',
-      [req.session.user.username]
-    );
-
-    if (admins.length === 0) {
-      return res.json({ success: false, message: 'Unauthorized' });
-    }
-
-    await connection.query('DELETE FROM accounts WHERE pName = ?', [username]);
-    res.json({ success: true, message: 'Akun berhasil dihapus!' });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Admin - Clear Marketplace
-app.post('/api/admin/clear-marketplace', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const connection = await pool.getConnection();
-  try {
-    await connection.query('DELETE FROM marketplace');
-    res.json({ success: true, message: 'Marketplace dibersihkan!' });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Admin - Clear Guide Chat
-app.post('/api/admin/clear-guide-chat', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { guide_name } = req.body;
-
-  const connection = await pool.getConnection();
-  try {
-    const [guides]: any = await connection.query(
-      'SELECT id FROM guides WHERE guide_name = ?',
-      [guide_name]
-    );
-
-    if (guides.length === 0) {
-      return res.json({ success: false, message: 'Guide tidak ditemukan!' });
-    }
-
-    await connection.query('DELETE FROM guide_chat WHERE guide_id = ?', [guides[0].id]);
-    res.json({ success: true, message: 'Chat guide dibersihkan!' });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// ===================================
-// MARKET DIGITAL ENDPOINTS
-// ===================================
-
-// Market Digital - Create Listing
-app.post('/api/market-digital/create', upload.single('photo'), async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { asset_name, asset_type, description, price, location, phone, samp_id, features } = req.body;
-  const photo_url = req.file ? `/uploads/${req.file.filename}` : null;
-
-  const connection = await pool.getConnection();
-  try {
-    await connection.query(
-      'INSERT INTO market_digital (photo_url, username, asset_name, asset_type, description, price, location, phone, samp_id, features) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [photo_url, req.session.user.username, asset_name, asset_type, description, price, location, phone, samp_id, features]
-    );
-
-    res.json({ success: true, message: 'Asset berhasil ditambahkan!' });
-  } catch (error) {
-    console.error('Error creating digital asset:', error);
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Market Digital - Get Listings
-app.get('/api/market-digital', async (req: Request, res: Response) => {
-  const { type, search, sort } = req.query;
-  const connection = await pool.getConnection();
-  try {
-    let query = 'SELECT * FROM market_digital WHERE status = "active"';
-    const params: any[] = [];
-
-    if (type && type !== 'all') {
-      query += ' AND asset_type = ?';
-      params.push(type);
-    }
-
-    if (search) {
-      query += ' AND (asset_name LIKE ? OR location LIKE ?)';
-      params.push(`%${search}%`, `%${search}%`);
-    }
-
-    // Sorting
-    if (sort === 'price_asc') {
-      query += ' ORDER BY price ASC';
-    } else if (sort === 'price_desc') {
-      query += ' ORDER BY price DESC';
-    } else if (sort === 'popular') {
-      query += ' ORDER BY views DESC';
-    } else {
-      query += ' ORDER BY created_at DESC';
-    }
-
-    const [assets] = await connection.query(query, params);
-    res.json({ success: true, assets });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Market Digital - View Asset (increment views)
-app.post('/api/market-digital/view/:id', async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const connection = await pool.getConnection();
-  try {
-    await connection.query(
-      'UPDATE market_digital SET views = views + 1 WHERE id = ?',
-      [id]
-    );
+    await db.execute("DELETE FROM getcord WHERE id = ?", [req.params.id]);
     res.json({ success: true });
-  } catch (error) {
-    res.json({ success: false });
-  } finally {
-    connection.release();
+  } catch (err: any) {
+    res.json({ success: false, message: err.message });
   }
 });
 
-// Market Digital - Mark as Sold
-app.post('/api/market-digital/mark-sold/:id', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { id } = req.params;
-  const connection = await pool.getConnection();
+// Check username exists
+app.get("/api/check-user/:username", requireAuth, async (req, res) => {
+  if (!db) return res.json({ success: false, message: "DB not connected" });
   try {
-    // Check if user owns the listing
-    const [assets]: any = await connection.query(
-      'SELECT username FROM market_digital WHERE id = ?',
-      [id]
-    );
-
-    if (assets.length === 0 || assets[0].username !== req.session.user.username) {
-      return res.json({ success: false, message: 'Unauthorized' });
-    }
-
-    await connection.query(
-      'UPDATE market_digital SET status = "sold" WHERE id = ?',
-      [id]
-    );
-
-    res.json({ success: true, message: 'Asset ditandai sebagai terjual!' });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
+    const [rows]: any = await db.execute("SELECT pName FROM accounts WHERE pName = ?", [req.params.username]);
+    res.json({ exists: rows.length > 0 });
+  } catch (err: any) {
+    res.json({ exists: false, message: err.message });
   }
 });
 
-// ===================================
-// ITEM MANAGER ENDPOINTS (ADMIN ONLY)
-// ===================================
-
-// Get All Item Templates
-app.get('/api/admin/items/templates', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const connection = await pool.getConnection();
+// Set money
+app.post("/api/set-money", requireAuth, async (req, res) => {
+  if (!db) return res.json({ success: false, message: "DB not connected" });
+  const { username, value, type } = req.body;
+  const validTypes = ["pRouble", "pCash", "pBank", "pUangMerah"];
+  if (!validTypes.includes(type)) return res.json({ success: false, message: "Tipe tidak valid" });
+  if (parseInt(value) > 500000000) return res.json({ success: false, message: "Value melebihi 500 Juta!" });
   try {
-    // Check if admin
-    const [admins]: any = await connection.query(
-      'SELECT * FROM admins_website WHERE aName = ?',
-      [req.session.user.username]
-    );
-
-    if (admins.length === 0) {
-      return res.json({ success: false, message: 'Unauthorized' });
-    }
-
-    const [templates] = await connection.query(
-      'SELECT * FROM item_templates ORDER BY item_category, item_name'
-    );
-
-    res.json({ success: true, templates });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
+    const [rows]: any = await db.execute("SELECT pName FROM accounts WHERE pName = ?", [username]);
+    if (rows.length === 0) return res.json({ success: false, message: "Username tidak ditemukan" });
+    await db.execute(`UPDATE accounts SET ${type} = ? WHERE pName = ?`, [value, username]);
+    res.json({ success: true, message: `Berhasil set ${type} untuk ${username}` });
+  } catch (err: any) {
+    res.json({ success: false, message: err.message });
   }
 });
 
-// Create Item Template
-app.post('/api/admin/items/create', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { item_code, item_name, item_category, item_type, max_limit, rarity, base_price, description } = req.body;
-  const connection = await pool.getConnection();
+// Set items
+app.post("/api/set-items", requireAuth, async (req, res) => {
+  if (!db) return res.json({ success: false, message: "DB not connected" });
+  const { username, value, type } = req.body;
+  const validTypes = ["pBatu","pBatuk","pFish","pPenyu","pDolphin","pHiu","pMegalodon","pCaught","pPadi","pAyam","pSemen","pEmas","pSusu","pMinyak","pAyamKemas","pAyamPotong","pAyamHidup","pBulu"];
+  if (!validTypes.includes(type)) return res.json({ success: false, message: "Tipe tidak valid" });
+  if (parseInt(value) > 500) return res.json({ success: false, message: "Value melebihi 500!" });
   try {
-    // Check if admin
-    const [admins]: any = await connection.query(
-      'SELECT * FROM admins_website WHERE aName = ?',
-      [req.session.user.username]
-    );
-
-    if (admins.length === 0) {
-      return res.json({ success: false, message: 'Unauthorized' });
-    }
-
-    await connection.query(
-      'INSERT INTO item_templates (item_code, item_name, item_category, item_type, max_limit, rarity, base_price, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [item_code, item_name, item_category, item_type, max_limit, rarity, base_price, description]
-    );
-
-    res.json({ success: true, message: 'Item template berhasil dibuat!' });
-  } catch (error) {
-    console.error('Error creating item:', error);
-    res.json({ success: false, message: 'Server error atau item code sudah ada' });
-  } finally {
-    connection.release();
+    const [rows]: any = await db.execute("SELECT pName FROM accounts WHERE pName = ?", [username]);
+    if (rows.length === 0) return res.json({ success: false, message: "Username tidak ditemukan" });
+    await db.execute(`UPDATE accounts SET ${type} = ? WHERE pName = ?`, [value, username]);
+    res.json({ success: true, message: `Berhasil set ${type} untuk ${username}` });
+  } catch (err: any) {
+    res.json({ success: false, message: err.message });
   }
 });
 
-// Update Item Template
-app.post('/api/admin/items/update/:id', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { id } = req.params;
-  const { item_name, item_type, max_limit, rarity, base_price, description, is_tradeable } = req.body;
-  const connection = await pool.getConnection();
+// Set account
+app.post("/api/set-account", requireAuth, async (req, res) => {
+  if (!db) return res.json({ success: false, message: "DB not connected" });
+  const { username, value, type } = req.body;
+  const validTypes = ["pDrugs","pMicin","pSteroid","pComponent","pMetall","pFood","pDrink"];
+  if (!validTypes.includes(type)) return res.json({ success: false, message: "Tipe tidak valid" });
+  if (parseInt(value) > 700) return res.json({ success: false, message: "Value melebihi 700!" });
   try {
-    // Check if admin
-    const [admins]: any = await connection.query(
-      'SELECT * FROM admins_website WHERE aName = ?',
-      [req.session.user.username]
-    );
-
-    if (admins.length === 0) {
-      return res.json({ success: false, message: 'Unauthorized' });
-    }
-
-    await connection.query(
-      'UPDATE item_templates SET item_name = ?, item_type = ?, max_limit = ?, rarity = ?, base_price = ?, description = ?, is_tradeable = ? WHERE id = ?',
-      [item_name, item_type, max_limit, rarity, base_price, description, is_tradeable, id]
-    );
-
-    res.json({ success: true, message: 'Item template berhasil diupdate!' });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
+    const [rows]: any = await db.execute("SELECT pName FROM accounts WHERE pName = ?", [username]);
+    if (rows.length === 0) return res.json({ success: false, message: "Username tidak ditemukan" });
+    await db.execute(`UPDATE accounts SET ${type} = ? WHERE pName = ?`, [value, username]);
+    res.json({ success: true, message: `Berhasil set ${type} untuk ${username}` });
+  } catch (err: any) {
+    res.json({ success: false, message: err.message });
   }
 });
 
-// Delete Item Template
-app.post('/api/admin/items/delete/:id', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { id } = req.params;
-  const connection = await pool.getConnection();
+// Set property
+app.post("/api/set-property", requireAuth, async (req, res) => {
+  if (!db) return res.json({ success: false, message: "DB not connected" });
+  const { username, type, value } = req.body;
+  const validTypes = ["pSkin","pMaskID","pCS","pFreeRoulet"];
+  if (!validTypes.includes(type)) return res.json({ success: false, message: "Tipe tidak valid" });
   try {
-    // Check if admin
-    const [admins]: any = await connection.query(
-      'SELECT * FROM admins_website WHERE aName = ?',
-      [req.session.user.username]
-    );
-
-    if (admins.length === 0) {
-      return res.json({ success: false, message: 'Unauthorized' });
-    }
-
-    await connection.query('DELETE FROM item_templates WHERE id = ?', [id]);
-
-    res.json({ success: true, message: 'Item template berhasil dihapus!' });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
+    const [rows]: any = await db.execute("SELECT pName FROM accounts WHERE pName = ?", [username]);
+    if (rows.length === 0) return res.json({ success: false, message: "Username tidak ditemukan" });
+    if (type === "pMaskID" && (parseInt(value) < 0 || parseInt(value) > 9999)) return res.json({ success: false, message: "MaskID max 4 digit" });
+    if (type === "pFreeRoulet" && parseInt(value) > 300) return res.json({ success: false, message: "Max gacha 300" });
+    await db.execute(`UPDATE accounts SET ${type} = ? WHERE pName = ?`, [value, username]);
+    res.json({ success: true, message: `Berhasil set ${type} untuk ${username}` });
+  } catch (err: any) {
+    res.json({ success: false, message: err.message });
   }
 });
 
-// Give Item to Player
-app.post('/api/admin/items/give', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
+// Admin log
+app.get("/api/admin-log", requireAuth, async (req, res) => {
+  if (!db) return res.json({ success: false, message: "DB not connected" });
+  try {
+    const [rows]: any = await db.execute("SELECT user_id, action, date FROM admin_log ORDER BY date DESC LIMIT 200");
+    res.json({ success: true, data: rows });
+  } catch (err: any) {
+    res.json({ success: false, message: err.message });
   }
+});
 
-  const { username, item_code, quantity } = req.body;
+// ========== FRONTEND ==========
+app.get("*", (req, res) => {
+  res.setHeader("Content-Type", "text/html");
+  res.send(`<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>DewataNation RP - Admin Panel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet"/>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --bg:#050a0f;
+  --bg2:#0a1520;
+  --bg3:#0f1e2e;
+  --card:#0d1a26;
+  --border:#1a3a5c;
+  --accent:#00d4ff;
+  --accent2:#ff6b00;
+  --accent3:#00ff88;
+  --text:#c8e4f0;
+  --text2:#5a8aa0;
+  --danger:#ff3b5c;
+  --success:#00ff88;
+  --warn:#ffaa00;
+  --sidebar-w:280px;
+}
+body{
+  font-family:'Rajdhani',sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  min-height:100vh;
+  overflow-x:hidden;
+}
+/* Scanline overlay */
+body::before{
+  content:'';
+  position:fixed;inset:0;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,212,255,0.015) 2px,rgba(0,212,255,0.015) 4px);
+  pointer-events:none;z-index:9999;
+}
 
-  const validItems: Record<string, string> = {
-    pBatu: 'Batu Bersih',
-    pBatuk: 'Batu Kotor',
-    pFish: 'Ikan Biasa',
-    pPenyu: 'Penyu',
-    pDolphin: 'Dolphin',
-    pHiu: 'Ikan Hiu',
-    pMegalodon: 'Ikan Megalodon',
-    pCaught: 'Cacing/Umpan',
-    pPadi: 'Padi',
-    pAyam: 'Ayam',
-    pSemen: 'Semen',
-    pEmas: 'Emas',
-    pSusu: 'Susu',
-    pMinyak: 'Minyak'
+/* ======= LOADING ======= */
+#loading-screen{
+  position:fixed;inset:0;
+  background:var(--bg);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  z-index:10000;transition:opacity .5s;
+}
+.loading-logo{
+  font-family:'Orbitron',monospace;
+  font-size:2rem;font-weight:900;
+  color:var(--accent);
+  text-shadow:0 0 30px var(--accent);
+  margin-bottom:2rem;letter-spacing:4px;
+}
+.loading-bar-wrap{
+  width:300px;height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;
+  border:1px solid var(--border);
+}
+.loading-bar{
+  height:100%;width:0%;
+  background:linear-gradient(90deg,var(--accent),var(--accent2));
+  border-radius:2px;
+  transition:width .1s;
+  box-shadow:0 0 10px var(--accent);
+}
+.loading-text{
+  margin-top:1rem;font-family:'Share Tech Mono',monospace;
+  color:var(--text2);font-size:.85rem;letter-spacing:2px;
+}
+
+/* ======= DB CONNECT MODAL ======= */
+#db-modal{
+  position:fixed;inset:0;
+  background:rgba(0,0,0,.85);
+  display:flex;align-items:center;justify-content:center;
+  z-index:900;
+}
+.db-modal-box{
+  background:var(--card);
+  border:1px solid var(--accent);
+  border-radius:12px;padding:2rem;width:90%;max-width:440px;
+  box-shadow:0 0 40px rgba(0,212,255,.15);
+}
+.db-modal-box h2{
+  font-family:'Orbitron',monospace;
+  color:var(--accent);font-size:1.1rem;
+  margin-bottom:1.5rem;text-align:center;letter-spacing:2px;
+}
+
+/* ======= LOGIN ======= */
+#login-section{
+  position:fixed;inset:0;
+  display:flex;align-items:center;justify-content:center;
+  z-index:800;
+  background:radial-gradient(ellipse at 30% 50%,rgba(0,212,255,.05) 0%,transparent 60%),
+             radial-gradient(ellipse at 70% 50%,rgba(255,107,0,.05) 0%,transparent 60%),var(--bg);
+}
+.login-box{
+  width:90%;max-width:480px;
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:16px;overflow:hidden;
+  box-shadow:0 0 60px rgba(0,212,255,.1);
+  animation:fadeSlide .6s ease;
+}
+@keyframes fadeSlide{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
+.login-banner{
+  width:100%;height:180px;object-fit:cover;object-position:center;
+  display:block;
+}
+.login-body{padding:2rem;}
+.login-body h1{
+  font-family:'Orbitron',monospace;
+  font-size:1.3rem;color:var(--accent);
+  letter-spacing:3px;margin-bottom:.3rem;
+  text-shadow:0 0 20px rgba(0,212,255,.5);
+}
+.login-body p{color:var(--text2);font-size:.9rem;margin-bottom:1.5rem;}
+
+/* ======= FORM ELEMENTS ======= */
+.form-group{margin-bottom:1rem;}
+label{display:block;font-size:.85rem;color:var(--text2);margin-bottom:.4rem;letter-spacing:1px;font-weight:600;}
+input,select{
+  width:100%;padding:.7rem 1rem;
+  background:rgba(0,0,0,.4);
+  border:1px solid var(--border);
+  border-radius:8px;color:var(--text);
+  font-family:'Rajdhani',sans-serif;font-size:1rem;
+  transition:border .2s,box-shadow .2s;outline:none;
+}
+input:focus,select:focus{
+  border-color:var(--accent);
+  box-shadow:0 0 15px rgba(0,212,255,.2);
+}
+select option{background:var(--bg3);}
+
+/* ======= BUTTONS ======= */
+.btn{
+  padding:.7rem 1.4rem;border:none;cursor:pointer;
+  border-radius:8px;font-family:'Rajdhani',sans-serif;
+  font-size:1rem;font-weight:700;letter-spacing:1px;
+  transition:all .2s;position:relative;overflow:hidden;
+}
+.btn::after{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(rgba(255,255,255,.1),transparent);
+  opacity:0;transition:opacity .2s;
+}
+.btn:hover::after{opacity:1;}
+.btn-primary{
+  background:linear-gradient(135deg,var(--accent),#0088aa);
+  color:#000;width:100%;
+  box-shadow:0 4px 20px rgba(0,212,255,.3);
+}
+.btn-primary:hover{box-shadow:0 4px 30px rgba(0,212,255,.5);transform:translateY(-1px);}
+.btn-danger{background:linear-gradient(135deg,var(--danger),#aa0022);color:#fff;}
+.btn-danger:hover{box-shadow:0 4px 20px rgba(255,59,92,.4);}
+.btn-success{background:linear-gradient(135deg,var(--success),#00aa55);color:#000;}
+.btn-success:hover{box-shadow:0 4px 20px rgba(0,255,136,.4);}
+.btn-copy{
+  background:transparent;border:1px solid var(--border);
+  color:var(--accent);padding:.35rem .7rem;font-size:.8rem;
+  border-radius:6px;cursor:pointer;transition:all .2s;
+  font-family:'Share Tech Mono',monospace;
+}
+.btn-copy:hover{background:rgba(0,212,255,.1);border-color:var(--accent);}
+.btn-sm{padding:.4rem .8rem;font-size:.85rem;}
+
+/* ======= TOAST ======= */
+#toast-container{
+  position:fixed;top:1.5rem;right:1.5rem;
+  z-index:20000;display:flex;flex-direction:column;gap:.5rem;
+}
+.toast{
+  padding:.8rem 1.2rem;border-radius:8px;
+  font-family:'Share Tech Mono',monospace;font-size:.85rem;
+  animation:toastIn .3s ease;min-width:220px;max-width:320px;
+  border:1px solid;
+}
+@keyframes toastIn{from{opacity:0;transform:translateX(50px)}to{opacity:1;transform:translateX(0)}}
+.toast.success{background:rgba(0,255,136,.15);border-color:var(--success);color:var(--success);}
+.toast.error{background:rgba(255,59,92,.15);border-color:var(--danger);color:var(--danger);}
+.toast.info{background:rgba(0,212,255,.15);border-color:var(--accent);color:var(--accent);}
+
+/* ======= MAIN LAYOUT ======= */
+#app{display:none;min-height:100vh;}
+
+/* ======= SIDEBAR ======= */
+#sidebar{
+  position:fixed;top:0;left:0;bottom:0;
+  width:var(--sidebar-w);
+  background:var(--bg2);
+  border-right:1px solid var(--border);
+  transform:translateX(0);
+  transition:transform .3s cubic-bezier(.4,0,.2,1);
+  z-index:500;display:flex;flex-direction:column;
+  box-shadow:4px 0 30px rgba(0,0,0,.5);
+}
+#sidebar.closed{transform:translateX(calc(-1 * var(--sidebar-w)));}
+.sidebar-header{
+  padding:1.5rem;
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:1rem;
+}
+.sidebar-logo{
+  width:40px;height:40px;border-radius:8px;object-fit:cover;
+  border:1px solid var(--border);
+}
+.sidebar-title{
+  font-family:'Orbitron',monospace;font-size:.85rem;
+  color:var(--accent);letter-spacing:2px;line-height:1.3;
+}
+.sidebar-subtitle{font-size:.7rem;color:var(--text2);}
+.sidebar-nav{flex:1;overflow-y:auto;padding:1rem 0;}
+.nav-item{
+  display:flex;align-items:center;gap:.8rem;
+  padding:.85rem 1.5rem;cursor:pointer;
+  color:var(--text2);font-size:1rem;font-weight:600;
+  border-left:3px solid transparent;
+  transition:all .2s;letter-spacing:.5px;
+}
+.nav-item:hover{
+  background:rgba(0,212,255,.05);
+  color:var(--text);border-left-color:var(--border);
+}
+.nav-item.active{
+  background:rgba(0,212,255,.1);
+  color:var(--accent);border-left-color:var(--accent);
+}
+.nav-icon{font-size:1.2rem;width:24px;text-align:center;}
+.sidebar-footer{
+  padding:1rem 1.5rem;border-top:1px solid var(--border);
+  font-size:.8rem;color:var(--text2);
+}
+.db-status{
+  display:flex;align-items:center;gap:.5rem;
+  font-family:'Share Tech Mono',monospace;
+  font-size:.75rem;
+}
+.db-dot{width:8px;height:8px;border-radius:50%;background:var(--danger);}
+.db-dot.on{background:var(--success);box-shadow:0 0 8px var(--success);}
+
+/* ======= MAIN CONTENT ======= */
+#main{
+  margin-left:var(--sidebar-w);
+  transition:margin .3s cubic-bezier(.4,0,.2,1);
+  min-height:100vh;
+}
+#main.full{margin-left:0;}
+
+/* ======= TOPBAR ======= */
+.topbar{
+  position:sticky;top:0;
+  background:rgba(5,10,15,.9);
+  backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--border);
+  padding:.8rem 1.5rem;
+  display:flex;align-items:center;gap:1rem;
+  z-index:400;
+}
+.sidebar-toggle{
+  background:transparent;border:1px solid var(--border);
+  color:var(--accent);width:38px;height:38px;border-radius:8px;
+  cursor:pointer;font-size:1.2rem;display:flex;align-items:center;justify-content:center;
+  transition:all .2s;flex-shrink:0;
+}
+.sidebar-toggle:hover{background:rgba(0,212,255,.1);border-color:var(--accent);}
+.topbar-title{
+  font-family:'Orbitron',monospace;font-size:1rem;
+  color:var(--accent);letter-spacing:2px;
+}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:1rem;}
+.admin-badge{
+  font-family:'Share Tech Mono',monospace;
+  font-size:.8rem;color:var(--text2);
+  border:1px solid var(--border);border-radius:20px;
+  padding:.3rem .8rem;
+}
+
+/* ======= CONTENT ======= */
+.content{padding:2rem;max-width:1200px;}
+.page{display:none;}
+.page.active{display:block;animation:pageIn .3s ease;}
+@keyframes pageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+/* ======= CARDS ======= */
+.card{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:12px;padding:1.5rem;
+  margin-bottom:1.5rem;
+}
+.card-title{
+  font-family:'Orbitron',monospace;
+  font-size:.9rem;color:var(--accent);
+  letter-spacing:2px;margin-bottom:1rem;
+  padding-bottom:.8rem;border-bottom:1px solid var(--border);
+}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin-bottom:1.5rem;}
+.stat-card{
+  background:var(--bg3);border:1px solid var(--border);
+  border-radius:10px;padding:1.2rem;
+  position:relative;overflow:hidden;
+}
+.stat-card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,var(--accent),transparent);
+}
+.stat-value{
+  font-family:'Orbitron',monospace;font-size:1.4rem;
+  color:var(--accent);margin:.3rem 0;
+}
+.stat-label{font-size:.8rem;color:var(--text2);letter-spacing:1px;}
+
+/* ======= INFO ROWS ======= */
+.info-row{
+  display:flex;align-items:center;gap:1rem;
+  padding:.8rem;background:var(--bg3);
+  border-radius:8px;margin-bottom:.5rem;
+  border:1px solid var(--border);
+  flex-wrap:wrap;
+}
+.info-label{color:var(--text2);font-size:.85rem;min-width:80px;}
+.info-value{
+  font-family:'Share Tech Mono',monospace;
+  color:var(--accent);flex:1;word-break:break-all;
+}
+
+/* ======= TABLE ======= */
+.table-wrap{overflow-x:auto;border-radius:8px;border:1px solid var(--border);}
+table{width:100%;border-collapse:collapse;}
+thead{background:var(--bg3);}
+th{
+  padding:.8rem 1rem;text-align:left;
+  font-family:'Orbitron',monospace;font-size:.7rem;
+  color:var(--accent);letter-spacing:2px;
+  border-bottom:1px solid var(--border);
+}
+td{
+  padding:.8rem 1rem;font-family:'Share Tech Mono',monospace;
+  font-size:.85rem;border-bottom:1px solid rgba(26,58,92,.3);
+  color:var(--text);
+}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:rgba(0,212,255,.03);}
+
+/* ======= SET MENU TABS ======= */
+.tabs{display:flex;gap:.5rem;margin-bottom:1.5rem;flex-wrap:wrap;}
+.tab{
+  padding:.5rem 1rem;border-radius:8px;cursor:pointer;
+  font-size:.85rem;font-weight:600;letter-spacing:1px;
+  border:1px solid var(--border);color:var(--text2);
+  background:transparent;transition:all .2s;
+}
+.tab.active,.tab:hover{
+  background:rgba(0,212,255,.1);
+  color:var(--accent);border-color:var(--accent);
+}
+.tab-content{display:none;}
+.tab-content.active{display:block;}
+
+/* ======= BANNER ======= */
+.banner{
+  width:100%;border-radius:12px;overflow:hidden;margin-bottom:1.5rem;
+  border:1px solid var(--border);
+  box-shadow:0 0 30px rgba(0,212,255,.1);
+}
+.banner img{width:100%;max-height:220px;object-fit:cover;display:block;}
+
+/* ======= OVERLAY ======= */
+#sidebar-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.5);
+  z-index:499;display:none;
+}
+
+/* ======= RESPONSIVE ======= */
+@media(max-width:768px){
+  :root{--sidebar-w:260px;}
+  #sidebar{transform:translateX(calc(-1 * var(--sidebar-w)));}
+  #sidebar.open{transform:translateX(0);}
+  #sidebar-overlay{display:none;}
+  #sidebar.open ~ #sidebar-overlay,
+  body.sb-open #sidebar-overlay{display:block;}
+  #main{margin-left:0!important;}
+  .content{padding:1rem;}
+}
+
+/* Glow pulse on accent */
+@keyframes glow{
+  0%,100%{text-shadow:0 0 10px rgba(0,212,255,.5);}
+  50%{text-shadow:0 0 25px rgba(0,212,255,1),0 0 50px rgba(0,212,255,.4);}
+}
+.glow{animation:glow 2s infinite;}
+
+/* Radio group */
+.radio-group{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.3rem;}
+.radio-item{
+  display:flex;align-items:center;gap:.4rem;
+  padding:.4rem .8rem;border:1px solid var(--border);
+  border-radius:6px;cursor:pointer;transition:all .2s;
+  font-size:.85rem;
+}
+.radio-item:hover,.radio-item.selected{
+  border-color:var(--accent);background:rgba(0,212,255,.1);color:var(--accent);
+}
+.radio-item input{display:none;}
+</style>
+</head>
+<body>
+
+<!-- Toast -->
+<div id="toast-container"></div>
+
+<!-- Sidebar Overlay -->
+<div id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+<!-- Loading Screen -->
+<div id="loading-screen">
+  <div class="loading-logo glow">DEWATA<span style="color:var(--accent2)">NATION</span></div>
+  <div style="font-family:'Share Tech Mono',monospace;color:var(--text2);font-size:.8rem;margin-bottom:1.5rem;letter-spacing:3px;">ROLEPLAY - ADMIN PANEL</div>
+  <div class="loading-bar-wrap"><div class="loading-bar" id="loading-bar"></div></div>
+  <div class="loading-text" id="loading-text">INITIALIZING SYSTEM...</div>
+</div>
+
+<!-- DB Connect Modal -->
+<div id="db-modal" style="display:none;">
+  <div class="db-modal-box">
+    <h2>⚡ DATABASE CONNECTION</h2>
+    <div class="form-group"><label>HOST</label><input id="db-host" placeholder="localhost" value="208.84.103.75"/></div>
+    <div class="form-group"><label>PORT</label><input id="db-port" placeholder="3306" value="3306"/></div>
+    <div class="form-group"><label>USER</label><input id="db-user" placeholder="root" value="u1649_NtHPQzNRvz"/></div>
+    <div class="form-group"><label>PASSWORD</label><input id="db-pass" type="password" placeholder="password" value="qJHEEZZraPLuQGGOtHPSvWT="/></div>
+    <div class="form-group"><label>DATABASE</label><input id="db-name" placeholder="samp_db" value="s1649_Dewata"/></div>
+    <button class="btn btn-primary" onclick="connectDB()">CONNECT DATABASE</button>
+  </div>
+</div>
+
+<!-- Login -->
+<div id="login-section">
+  <div class="login-box">
+    <img class="login-banner" src="https://logo-dewata-nationrp.edgeone.app/IMG-20260131-WA0425.jpg" alt="DewataNation Banner" onerror="this.style.display='none'"/>
+    <div class="login-body">
+      <h1>ADMIN PANEL</h1>
+      <p>DewataNation RolePlay — SA-MP Server</p>
+
+      <!-- Step 1 -->
+      <div id="step-login">
+        <div class="form-group"><label>USERNAME</label><input id="l-user" placeholder="Masukkan username..."/></div>
+        <div class="form-group"><label>PASSWORD</label><input id="l-pass" type="password" placeholder="Masukkan password..."/></div>
+        <button class="btn btn-primary" onclick="doLogin()">LOGIN</button>
+      </div>
+
+      <!-- Step 2 -->
+      <div id="step-adminkey" style="display:none;">
+        <div style="background:rgba(0,255,136,.1);border:1px solid var(--success);border-radius:8px;padding:.8rem;margin-bottom:1rem;font-size:.9rem;color:var(--success);">
+          ✅ Password terverifikasi! Masukkan Admin Key.
+        </div>
+        <div class="form-group"><label>ADMIN KEY</label><input id="l-adminkey" type="password" placeholder="Masukkan admin key..."/></div>
+        <button class="btn btn-primary" onclick="doVerifyAdmin()">VERIFY ADMIN KEY</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app">
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div class="sidebar-header">
+      <img class="sidebar-logo" src="https://logo-dewata-nationrp.edgeone.app/IMG-20260131-WA0425.jpg" alt="Logo" onerror="this.style.background='var(--bg3)'"/>
+      <div>
+        <div class="sidebar-title">DEWATA<br>NATION RP</div>
+        <div class="sidebar-subtitle">Admin Control Panel</div>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-item active" onclick="navigate('dashboard')">
+        <span class="nav-icon">🏠</span> Dashboard
+      </div>
+      <div class="nav-item" onclick="navigate('getcord')">
+        <span class="nav-icon">📍</span> Getcord List
+      </div>
+      <div class="nav-item" onclick="navigate('setmenu')">
+        <span class="nav-icon">⚙️</span> Set Menu
+      </div>
+      <div class="nav-item" onclick="navigate('adminlog')">
+        <span class="nav-icon">📋</span> Admin Log
+      </div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="db-status">
+        <div class="db-dot" id="db-dot"></div>
+        <span id="db-status-text">Checking DB...</span>
+      </div>
+      <div style="margin-top:.8rem;">
+        <button class="btn btn-danger btn-sm" style="width:100%;" onclick="doLogout()">LOGOUT</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div id="main">
+    <div class="topbar">
+      <button class="sidebar-toggle" onclick="toggleSidebar()">☰</button>
+      <div class="topbar-title" id="topbar-title">DASHBOARD</div>
+      <div class="topbar-right">
+        <div class="admin-badge">👤 <span id="admin-name-display">Admin</span></div>
+      </div>
+    </div>
+    <div class="content">
+
+      <!-- DASHBOARD -->
+      <div class="page active" id="page-dashboard">
+        <div class="banner">
+          <img src="https://logo-dewata-nationrp.edgeone.app/IMG-20260131-WA0425.jpg" alt="Banner"/>
+        </div>
+        <div class="stat-grid">
+          <div class="stat-card">
+            <div class="stat-label">SERVER STATUS</div>
+            <div class="stat-value" style="color:var(--success);">ONLINE</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">GAMEMODE</div>
+            <div class="stat-value" style="font-size:1rem;">DewataNation RP</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">VERSION</div>
+            <div class="stat-value" style="font-size:1rem;">SA-MP 0.3.7</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">SERVER INFORMATION</div>
+          <div class="info-row">
+            <div class="nav-icon">🌐</div>
+            <div class="info-label">IP & PORT</div>
+            <div class="info-value">208.84.103.75:7103</div>
+            <button class="btn-copy" onclick="copyText('208.84.103.75:7103','IP berhasil disalin!')">📋 COPY</button>
+          </div>
+          <div class="info-row">
+            <div class="nav-icon">💬</div>
+            <div class="info-label">WhatsApp</div>
+            <div class="info-value" style="word-break:break-all;">https://chat.whatsapp.com/GQ1V4a5ieKbHiXZLxqQx99</div>
+            <button class="btn-copy" onclick="copyText('https://chat.whatsapp.com/GQ1V4a5ieKbHiXZLxqQx99','Link WA berhasil disalin!')">📋 COPY</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">PANEL INFORMATION</div>
+          <p style="color:var(--text2);line-height:1.8;font-size:.95rem;">
+            Selamat datang di <span style="color:var(--accent);font-weight:700;">DewataNation RolePlay Admin Panel</span>.
+            Panel ini digunakan untuk mengelola server SA-MP DewataNation RP. Gunakan menu sidebar untuk mengakses berbagai fitur administrasi.
+            <br><br>
+            ⚠️ <span style="color:var(--warn);">Harap gunakan panel ini dengan bijaksana. Semua aktifitas akan tercatat di Admin Log.</span>
+          </p>
+        </div>
+      </div>
+
+      <!-- GETCORD -->
+      <div class="page" id="page-getcord">
+        <div class="card">
+          <div class="card-title">📍 GETCORD LIST</div>
+          <button class="btn btn-primary btn-sm" style="width:auto;margin-bottom:1rem;" onclick="loadGetcord()">🔄 REFRESH</button>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>ID</th><th>NAME</th><th>X</th><th>Y</th><th>Z</th><th>A</th><th>ACTION</th></tr></thead>
+              <tbody id="getcord-tbody"><tr><td colspan="7" style="text-align:center;color:var(--text2);">Klik Refresh untuk memuat data</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- SET MENU -->
+      <div class="page" id="page-setmenu">
+        <div class="tabs">
+          <div class="tab active" onclick="switchSetTab('money',this)">💰 Money</div>
+          <div class="tab" onclick="switchSetTab('items',this)">🎒 Items</div>
+          <div class="tab" onclick="switchSetTab('account',this)">🧪 Account</div>
+          <div class="tab" onclick="switchSetTab('property',this)">🏠 Property</div>
+        </div>
+
+        <!-- Money -->
+        <div class="tab-content active" id="set-money">
+          <div class="card">
+            <div class="card-title">💰 SET MONEY USER</div>
+            <div class="form-group"><label>USERNAME</label><input id="m-user" placeholder="Masukkan username player..."/></div>
+            <div class="form-group"><label>VALUE</label><input id="m-val" type="number" placeholder="0 - 500.000.000"/></div>
+            <div class="form-group">
+              <label>TIPE UANG</label>
+              <div class="radio-group" id="m-type-group">
+                <div class="radio-item selected" onclick="selectRadio('m-type-group','pRouble',this)">💎 Donate Coin (pRouble)</div>
+                <div class="radio-item" onclick="selectRadio('m-type-group','pCash',this)">💵 Cash (pCash)</div>
+                <div class="radio-item" onclick="selectRadio('m-type-group','pBank',this)">🏦 Bank (pBank)</div>
+                <div class="radio-item" onclick="selectRadio('m-type-group','pUangMerah',this)">🔴 Uang Merah (pUangMerah)</div>
+              </div>
+              <input type="hidden" id="m-type" value="pRouble"/>
+            </div>
+            <button class="btn btn-success btn-sm" onclick="setMoney()">✅ SET MONEY</button>
+          </div>
+        </div>
+
+        <!-- Items -->
+        <div class="tab-content" id="set-items">
+          <div class="card">
+            <div class="card-title">🎒 SET ITEMS USER</div>
+            <div class="form-group"><label>USERNAME</label><input id="i-user" placeholder="Masukkan username player..."/></div>
+            <div class="form-group"><label>VALUE (max 500)</label><input id="i-val" type="number" placeholder="0 - 500"/></div>
+            <div class="form-group">
+              <label>TIPE ITEM</label>
+              <select id="i-type">
+                <option value="pBatu">Batu Bersih (pBatu)</option>
+                <option value="pBatuk">Batu Kotor (pBatuk)</option>
+                <option value="pFish">Ikan (pFish)</option>
+                <option value="pPenyu">Penyu (pPenyu)</option>
+                <option value="pDolphin">Dolphin (pDolphin)</option>
+                <option value="pHiu">Hiu (pHiu)</option>
+                <option value="pMegalodon">Megalodon (pMegalodon)</option>
+                <option value="pCaught">Umpan Mancing (pCaught)</option>
+                <option value="pPadi">Padi (pPadi)</option>
+                <option value="pAyam">Ayam (pAyam)</option>
+                <option value="pSemen">Semen (pSemen)</option>
+                <option value="pEmas">Emas (pEmas)</option>
+                <option value="pSusu">Susu Sapi (pSusu)</option>
+                <option value="pMinyak">Minyak (pMinyak)</option>
+                <option value="pAyamKemas">Ayam Kemas (pAyamKemas)</option>
+                <option value="pAyamPotong">Ayam Potong (pAyamPotong)</option>
+                <option value="pAyamHidup">Ayam Hidup (pAyamHidup)</option>
+                <option value="pBulu">Bulu Ayam (pBulu)</option>
+              </select>
+            </div>
+            <button class="btn btn-success btn-sm" onclick="setItems()">✅ SET ITEMS</button>
+          </div>
+        </div>
+
+        <!-- Account -->
+        <div class="tab-content" id="set-account">
+          <div class="card">
+            <div class="card-title">🧪 SET ACCOUNT USER</div>
+            <div class="form-group"><label>USERNAME</label><input id="a-user" placeholder="Masukkan username player..."/></div>
+            <div class="form-group"><label>VALUE (max 700)</label><input id="a-val" type="number" placeholder="0 - 700"/></div>
+            <div class="form-group">
+              <label>TIPE</label>
+              <select id="a-type">
+                <option value="pDrugs">Drugs (pDrugs)</option>
+                <option value="pMicin">Marijuana (pMicin)</option>
+                <option value="pSteroid">Steroid (pSteroid)</option>
+                <option value="pComponent">Component (pComponent)</option>
+                <option value="pMetall">Besi (pMetall)</option>
+                <option value="pFood">Makanan (pFood)</option>
+                <option value="pDrink">Minuman (pDrink)</option>
+              </select>
+            </div>
+            <button class="btn btn-success btn-sm" onclick="setAccount()">✅ SET ACCOUNT</button>
+          </div>
+        </div>
+
+        <!-- Property -->
+        <div class="tab-content" id="set-property">
+          <div class="card">
+            <div class="card-title">🏠 SET PROPERTY USER</div>
+            <div class="form-group"><label>USERNAME</label><input id="p-user" placeholder="Masukkan username player..."/></div>
+            <div class="form-group">
+              <label>TIPE PROPERTY</label>
+              <select id="p-type" onchange="updatePropertyInput()">
+                <option value="pSkin">Set Skin (pSkin)</option>
+                <option value="pMaskID">Set Mask ID (pMaskID)</option>
+                <option value="pCS">Set CS / Custom Skin (pCS)</option>
+                <option value="pFreeRoulet">Set Gacha (pFreeRoulet)</option>
+              </select>
+            </div>
+            <div id="p-value-wrap" class="form-group">
+              <label id="p-value-label">SKIN ID</label>
+              <input id="p-val" type="number" placeholder="Masukkan skin ID..."/>
+            </div>
+            <div id="p-cs-wrap" style="display:none;" class="form-group">
+              <label>CS STATUS</label>
+              <div class="radio-group" id="cs-group">
+                <div class="radio-item selected" onclick="selectRadio('cs-group','1',this)">✅ Aktifkan (1)</div>
+                <div class="radio-item" onclick="selectRadio('cs-group','0',this)">❌ Nonaktifkan (0)</div>
+              </div>
+              <input type="hidden" id="cs-val" value="1"/>
+            </div>
+            <button class="btn btn-success btn-sm" onclick="setProperty()">✅ SET PROPERTY</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ADMIN LOG -->
+      <div class="page" id="page-adminlog">
+        <div class="card">
+          <div class="card-title">📋 ADMIN LOG</div>
+          <button class="btn btn-primary btn-sm" style="width:auto;margin-bottom:1rem;" onclick="loadAdminLog()">🔄 REFRESH</button>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>USER ID</th><th>ACTION / KEGIATAN</th><th>DATE / WAKTU</th></tr></thead>
+              <tbody id="adminlog-tbody"><tr><td colspan="3" style="text-align:center;color:var(--text2);">Klik Refresh untuk memuat data</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+// ======= STATE =======
+let sidebarOpen = true;
+let currentPage = 'dashboard';
+let radioValues = {};
+
+// ======= LOADING =======
+const steps = [
+  'INITIALIZING SYSTEM...','LOADING MODULES...','CONNECTING SERVICES...',
+  'LOADING ASSETS...','FINALIZING...'
+];
+let prog = 0;
+const bar = document.getElementById('loading-bar');
+const lt = document.getElementById('loading-text');
+const interval = setInterval(()=>{
+  prog += Math.random()*25+5;
+  if(prog>=100){prog=100;clearInterval(interval);setTimeout(initApp,400);}
+  bar.style.width = prog+'%';
+  lt.textContent = steps[Math.min(Math.floor(prog/25),steps.length-1)];
+},200);
+
+async function initApp(){
+  const ls = document.getElementById('loading-screen');
+  ls.style.opacity='0';
+  setTimeout(()=>ls.style.display='none',500);
+  const sess = await fetch('/api/session').then(r=>r.json());
+  if(sess.authenticated){
+    showApp(sess.username);
+  } else {
+    document.getElementById('login-section').style.display='flex';
+    checkDBAndShow();
+  }
+}
+
+async function checkDBAndShow(){
+  const r = await fetch('/api/db-status').then(r=>r.json());
+  if(!r.connected){
+    document.getElementById('db-modal').style.display='flex';
+  }
+  updateDBStatus(r.connected);
+}
+
+function updateDBStatus(connected){
+  const dot = document.getElementById('db-dot');
+  const txt = document.getElementById('db-status-text');
+  if(dot){dot.className='db-dot'+(connected?' on':'');}
+  if(txt){txt.textContent=connected?'DB Connected':'DB Disconnected';}
+}
+
+async function connectDB(){
+  const body = {
+    host:document.getElementById('db-host').value,
+    port:document.getElementById('db-port').value,
+    user:document.getElementById('db-user').value,
+    password:document.getElementById('db-pass').value,
+    database:document.getElementById('db-name').value,
   };
-
-  if (!validItems[item_code]) {
-    return res.json({ success: false, message: 'Item tidak valid!' });
+  const r = await fetch('/api/db-connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+  if(r.success){
+    document.getElementById('db-modal').style.display='none';
+    showToast(r.message,'success');
+    updateDBStatus(true);
+  } else {
+    showToast(r.message,'error');
   }
+}
 
-  const connection = await pool.getConnection();
-  try {
-    // Check if admin
-    const [admins]: any = await connection.query(
-      'SELECT * FROM admins_website WHERE aName = ?',
-      [req.session.user.username]
-    );
+// ======= AUTH =======
+async function doLogin(){
+  const username = document.getElementById('l-user').value.trim();
+  const password = document.getElementById('l-pass').value.trim();
+  if(!username||!password) return showToast('Isi username dan password!','error');
+  const r = await post('/api/login',{username,password});
+  if(r.success){
+    showToast(r.message,'success');
+    document.getElementById('step-login').style.display='none';
+    document.getElementById('step-adminkey').style.display='block';
+  } else showToast(r.message,'error');
+}
 
-    if (admins.length === 0) {
-      return res.json({ success: false, message: 'Unauthorized' });
-    }
+async function doVerifyAdmin(){
+  const adminKey = document.getElementById('l-adminkey').value.trim();
+  if(!adminKey) return showToast('Masukkan Admin Key!','error');
+  const r = await post('/api/verify-admin',{adminKey});
+  if(r.success){
+    showToast('Login berhasil! Selamat datang.','success');
+    document.getElementById('login-section').style.display='none';
+    const sess = await fetch('/api/session').then(r=>r.json());
+    showApp(sess.username);
+  } else showToast(r.message,'error');
+}
 
-    // Check if target user exists
-    const [users]: any = await connection.query(
-      'SELECT pName FROM accounts WHERE pName = ?',
-      [username]
-    );
+function showApp(username){
+  document.getElementById('app').style.display='block';
+  document.getElementById('admin-name-display').textContent=username||'Admin';
+  checkDBStatus();
+}
 
-    if (users.length === 0) {
-      return res.json({ success: false, message: 'Username tidak ditemukan!' });
-    }
+async function checkDBStatus(){
+  const r = await fetch('/api/db-status').then(r=>r.json());
+  updateDBStatus(r.connected);
+}
 
-    await connection.beginTransaction();
+async function doLogout(){
+  await post('/api/logout',{});
+  location.reload();
+}
 
-    // Update player item
-    await connection.query(
-      `UPDATE accounts SET ${item_code} = ${item_code} + ? WHERE pName = ?`,
-      [quantity, username]
-    );
+// ======= NAVIGATION =======
+function navigate(page){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('page-'+page).classList.add('active');
+  const navMap={dashboard:'Dashboard',getcord:'Getcord List',setmenu:'Set Menu',adminlog:'Admin Log'};
+  document.getElementById('topbar-title').textContent=navMap[page]||page.toUpperCase();
+  document.querySelectorAll('.nav-item').forEach(n=>{if(n.textContent.toLowerCase().includes(page.split('')[0])){}});
+  // highlight nav
+  document.querySelectorAll('.nav-item').forEach(n=>{
+    if((page==='dashboard'&&n.textContent.includes('Dashboard'))||
+       (page==='getcord'&&n.textContent.includes('Getcord'))||
+       (page==='setmenu'&&n.textContent.includes('Set'))||
+       (page==='adminlog'&&n.textContent.includes('Admin Log')))
+      n.classList.add('active');
+  });
+  currentPage=page;
+  if(window.innerWidth<=768) closeSidebar();
+  if(page==='getcord') loadGetcord();
+  if(page==='adminlog') loadAdminLog();
+}
 
-    // Log to item_spawn_history
-    await connection.query(
-      'INSERT INTO item_spawn_history (item_code, username, quantity, spawned_by, reason) VALUES (?, ?, ?, ?, ?)',
-      [item_code, username, quantity, req.session.user.username, `Give Items oleh Admin`]
-    );
-
-    await connection.commit();
-    res.json({
-      success: true,
-      message: `Berhasil give ${quantity}x ${validItems[item_code]} ke ${username}!`
-    });
-  } catch (error) {
-    await connection.rollback();
-    console.error('Error giving item:', error);
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
+// ======= SIDEBAR =======
+function toggleSidebar(){
+  const sb=document.getElementById('sidebar');
+  const main=document.getElementById('main');
+  const overlay=document.getElementById('sidebar-overlay');
+  if(window.innerWidth<=768){
+    sb.classList.toggle('open');
+    document.body.classList.toggle('sb-open');
+  } else {
+    sidebarOpen=!sidebarOpen;
+    sb.classList.toggle('closed',!sidebarOpen);
+    main.classList.toggle('full',!sidebarOpen);
   }
-});
+}
+function closeSidebar(){
+  document.getElementById('sidebar').classList.remove('open');
+  document.body.classList.remove('sb-open');
+}
 
-// Get Give Items History
-app.get('/api/admin/items/give-history', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
+// ======= GETCORD =======
+async function loadGetcord(){
+  const tbody=document.getElementById('getcord-tbody');
+  tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--text2);">Loading...</td></tr>';
+  const r=await fetch('/api/getcord').then(r=>r.json());
+  if(!r.success) return tbody.innerHTML=\`<tr><td colspan="7" style="color:var(--danger);text-align:center;">\${r.message}</td></tr>\`;
+  if(!r.data.length) return tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--text2);">Tidak ada data</td></tr>';
+  tbody.innerHTML=r.data.map(c=>\`
+    <tr>
+      <td><span style="color:var(--accent2);">#\${c.id}</span></td>
+      <td>\${c.Name}</td>
+      <td>\${parseFloat(c.X).toFixed(4)}</td>
+      <td>\${parseFloat(c.Y).toFixed(4)}</td>
+      <td>\${parseFloat(c.Z).toFixed(4)}</td>
+      <td>\${parseFloat(c.A).toFixed(4)}</td>
+      <td style="display:flex;gap:.4rem;flex-wrap:wrap;">
+        <button class="btn-copy" onclick="copyText('\${c.X},\${c.Y},\${c.Z},\${c.A}','Koordinat disalin!')">📋 COPY</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteGetcord(\${c.id})">🗑️</button>
+      </td>
+    </tr>
+  \`).join('');
+}
+
+async function deleteGetcord(id){
+  if(!confirm('Hapus koordinat ID '+id+'?')) return;
+  const r=await fetch('/api/getcord/'+id,{method:'DELETE'}).then(r=>r.json());
+  if(r.success){showToast('Koordinat dihapus!','success');loadGetcord();}
+  else showToast(r.message,'error');
+}
+
+// ======= SET TABS =======
+function switchSetTab(name,el){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('set-'+name).classList.add('active');
+}
+
+function selectRadio(groupId,value,el){
+  document.querySelectorAll('#'+groupId+' .radio-item').forEach(r=>r.classList.remove('selected'));
+  el.classList.add('selected');
+  // find hidden input
+  const hiddenInputMap={'m-type-group':'m-type','cs-group':'cs-val'};
+  if(hiddenInputMap[groupId]) document.getElementById(hiddenInputMap[groupId]).value=value;
+  radioValues[groupId]=value;
+}
+
+function updatePropertyInput(){
+  const type=document.getElementById('p-type').value;
+  const valWrap=document.getElementById('p-value-wrap');
+  const csWrap=document.getElementById('p-cs-wrap');
+  const valLabel=document.getElementById('p-value-label');
+  const valInput=document.getElementById('p-val');
+  if(type==='pCS'){
+    valWrap.style.display='none';csWrap.style.display='block';
+  } else {
+    valWrap.style.display='block';csWrap.style.display='none';
+    if(type==='pSkin'){valLabel.textContent='SKIN ID';valInput.placeholder='Masukkan skin ID...';}
+    else if(type==='pMaskID'){valLabel.textContent='MASK ID (max 4 digit)';valInput.placeholder='0000 - 9999';}
+    else if(type==='pFreeRoulet'){valLabel.textContent='JUMLAH GACHA (max 300)';valInput.placeholder='1 - 300';}
   }
+}
 
-  const { username, item_code } = req.query;
-  const connection = await pool.getConnection();
-  try {
-    // Check if admin
-    const [admins]: any = await connection.query(
-      'SELECT * FROM admins_website WHERE aName = ?',
-      [req.session.user.username]
-    );
+// ======= SET APIs =======
+async function setMoney(){
+  const username=document.getElementById('m-user').value.trim();
+  const value=document.getElementById('m-val').value;
+  const type=document.getElementById('m-type').value;
+  if(!username||!value) return showToast('Isi semua field!','error');
+  const r=await post('/api/set-money',{username,value,type});
+  showToast(r.message,r.success?'success':'error');
+}
+async function setItems(){
+  const username=document.getElementById('i-user').value.trim();
+  const value=document.getElementById('i-val').value;
+  const type=document.getElementById('i-type').value;
+  if(!username||!value) return showToast('Isi semua field!','error');
+  const r=await post('/api/set-items',{username,value,type});
+  showToast(r.message,r.success?'success':'error');
+}
+async function setAccount(){
+  const username=document.getElementById('a-user').value.trim();
+  const value=document.getElementById('a-val').value;
+  const type=document.getElementById('a-type').value;
+  if(!username||!value) return showToast('Isi semua field!','error');
+  const r=await post('/api/set-account',{username,value,type});
+  showToast(r.message,r.success?'success':'error');
+}
+async function setProperty(){
+  const username=document.getElementById('p-user').value.trim();
+  const type=document.getElementById('p-type').value;
+  let value;
+  if(type==='pCS') value=document.getElementById('cs-val').value;
+  else value=document.getElementById('p-val').value;
+  if(!username) return showToast('Isi username!','error');
+  if(type!=='pCS'&&!value) return showToast('Isi value!','error');
+  const r=await post('/api/set-property',{username,type,value});
+  showToast(r.message,r.success?'success':'error');
+}
 
-    if (admins.length === 0) {
-      return res.json({ success: false, message: 'Unauthorized' });
-    }
+// ======= ADMIN LOG =======
+async function loadAdminLog(){
+  const tbody=document.getElementById('adminlog-tbody');
+  tbody.innerHTML='<tr><td colspan="3" style="text-align:center;color:var(--text2);">Loading...</td></tr>';
+  const r=await fetch('/api/admin-log').then(r=>r.json());
+  if(!r.success) return tbody.innerHTML=\`<tr><td colspan="3" style="color:var(--danger);text-align:center;">\${r.message}</td></tr>\`;
+  if(!r.data.length) return tbody.innerHTML='<tr><td colspan="3" style="text-align:center;color:var(--text2);">Tidak ada log</td></tr>';
+  tbody.innerHTML=r.data.map(l=>\`
+    <tr>
+      <td><span style="color:var(--accent2);">\${l.user_id}</span></td>
+      <td style="max-width:400px;word-break:break-word;">\${l.action}</td>
+      <td style="color:var(--text2);">\${l.date}</td>
+    </tr>
+  \`).join('');
+}
 
-    const itemNames: Record<string, string> = {
-      pBatu: 'Batu Bersih', pBatuk: 'Batu Kotor', pFish: 'Ikan Biasa',
-      pPenyu: 'Penyu', pDolphin: 'Dolphin', pHiu: 'Ikan Hiu',
-      pMegalodon: 'Ikan Megalodon', pCaught: 'Cacing/Umpan', pPadi: 'Padi',
-      pAyam: 'Ayam', pSemen: 'Semen', pEmas: 'Emas', pSusu: 'Susu', pMinyak: 'Minyak'
-    };
+// ======= UTILS =======
+function copyText(text,msg){
+  navigator.clipboard.writeText(text).then(()=>showToast(msg||'Disalin!','success')).catch(()=>{
+    const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+    showToast(msg||'Disalin!','success');
+  });
+}
 
-    let query = `SELECT * FROM item_spawn_history WHERE 1=1`;
-    const params: any[] = [];
+function showToast(msg,type='info'){
+  const c=document.getElementById('toast-container');
+  const t=document.createElement('div');
+  t.className='toast '+type;
+  t.textContent=msg;
+  c.appendChild(t);
+  setTimeout(()=>{t.style.opacity='0';t.style.transition='opacity .3s';setTimeout(()=>t.remove(),300);},3500);
+}
 
-    if (username) {
-      query += ' AND username LIKE ?';
-      params.push(`%${username}%`);
-    }
+async function post(url,data){
+  const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  return r.json();
+}
 
-    if (item_code) {
-      query += ' AND item_code = ?';
-      params.push(item_code);
-    }
-
-    query += ' ORDER BY created_at DESC LIMIT 100';
-
-    const [history]: any = await connection.query(query, params);
-
-    // Format history
-    const formatted = history.map((h: any) => ({
-      ...h,
-      item_name: itemNames[h.item_code] || h.item_code
-    }));
-
-    res.json({ success: true, history: formatted });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Get Item Economy Stats
-app.get('/api/admin/items/economy', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const connection = await pool.getConnection();
-  try {
-    // Check if admin
-    const [admins]: any = await connection.query(
-      'SELECT * FROM admins_website WHERE aName = ?',
-      [req.session.user.username]
-    );
-
-    if (admins.length === 0) {
-      return res.json({ success: false, message: 'Unauthorized' });
-    }
-
-    // Get total items in circulation
-    const [itemStats] = await connection.query(`
-      SELECT 
-        SUM(pBatu) as total_batu,
-        SUM(pBatuk) as total_batuk,
-        SUM(pFish) as total_fish,
-        SUM(pPenyu) as total_penyu,
-        SUM(pDolphin) as total_dolphin,
-        SUM(pHiu) as total_hiu,
-        SUM(pMegalodon) as total_megalodon,
-        SUM(pCaught) as total_caught,
-        SUM(pPadi) as total_padi,
-        SUM(pAyam) as total_ayam,
-        SUM(pSemen) as total_semen,
-        SUM(pEmas) as total_emas,
-        SUM(pSusu) as total_susu,
-        SUM(pMinyak) as total_minyak,
-        SUM(pDrugs) as total_drugs,
-        SUM(pMicin) as total_micin,
-        SUM(pSteroid) as total_steroid,
-        SUM(pComponent) as total_component
-      FROM accounts
-    `);
-
-    res.json({ success: true, stats: itemStats });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// ===================================
-// PWA ENDPOINTS
-// ===================================
-
-// Subscribe to push notifications
-app.post('/api/pwa/subscribe', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { endpoint, keys } = req.body;
-  const username = req.session.user.username;
-
-  const connection = await pool.getConnection();
-  try {
-    // Store subscription in database
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS push_subscriptions (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        username VARCHAR(50) NOT NULL,
-        endpoint TEXT NOT NULL,
-        p256dh TEXT NOT NULL,
-        auth TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE KEY unique_subscription (username, endpoint(255))
-      )
-    `);
-
-    await connection.query(
-      'INSERT INTO push_subscriptions (username, endpoint, p256dh, auth) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE p256dh = ?, auth = ?',
-      [username, endpoint, keys.p256dh, keys.auth, keys.p256dh, keys.auth]
-    );
-
-    res.json({ success: true, message: 'Subscription saved' });
-  } catch (error) {
-    console.error('Error saving push subscription:', error);
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Send push notification (example endpoint - for admin or automated notifications)
-app.post('/api/pwa/send-notification', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { username, title, body, url } = req.body;
-
-  const connection = await pool.getConnection();
-  try {
-    // Check if admin
-    const [admins]: any = await connection.query(
-      'SELECT * FROM admins_website WHERE aName = ?',
-      [req.session.user.username]
-    );
-
-    if (admins.length === 0) {
-      return res.json({ success: false, message: 'Unauthorized' });
-    }
-
-    // Get user's subscription
-    const [subscriptions]: any = await connection.query(
-      'SELECT * FROM push_subscriptions WHERE username = ?',
-      [username]
-    );
-
-    if (subscriptions.length === 0) {
-      return res.json({ success: false, message: 'User belum subscribe push notifications' });
-    }
-
-    // TODO: Implement actual push notification sending using web-push library
-    // For now, just return success
-    // const webpush = require('web-push');
-    // const payload = JSON.stringify({ title, body, url });
-    // await webpush.sendNotification(subscriptions[0], payload);
-
-    res.json({ success: true, message: 'Notification sent (implementation pending)' });
-  } catch (error) {
-    console.error('Error sending push notification:', error);
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
+// Enter key support
+document.addEventListener('keydown',e=>{
+  if(e.key==='Enter'){
+    const step1=document.getElementById('step-login');
+    const step2=document.getElementById('step-adminkey');
+    if(step1&&step1.style.display!=='none') doLogin();
+    else if(step2&&step2.style.display!=='none') doVerifyAdmin();
   }
 });
-
-// ===================================
-// FACTION CHAT ENDPOINTS
-// ===================================
-
-// Get user's faction info
-app.get('/api/faction/my-info', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const connection = await pool.getConnection();
-  try {
-    const [faction]: any = await connection.query(
-      'SELECT * FROM faction_members WHERE username = ?',
-      [req.session.user.username]
-    );
-
-    if (faction.length === 0) {
-      return res.json({ success: false, message: 'Not in any faction' });
-    }
-
-    res.json({ success: true, faction: faction[0] });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
+</script>
+</body>
+</html>`);
 });
 
-// Get all jobs in faction side (godside/badside)
-app.get('/api/faction/jobs/:side', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
+// Start
+async function main() {
+  await connectDB();
+  app.listen(PORT, () => {
+    console.log(`🚀 DewataNation Admin Panel running on port ${PORT}`);
+  });
+}
 
-  const side = req.params.side; // 'godside' or 'badside'
-  const connection = await pool.getConnection();
-  try {
-    // Get user's faction
-    const [userFaction]: any = await connection.query(
-      'SELECT faction FROM faction_members WHERE username = ?',
-      [req.session.user.username]
-    );
-
-    if (userFaction.length === 0 || userFaction[0].faction !== side) {
-      return res.json({ success: false, message: 'Access denied' });
-    }
-
-    // Get all jobs in this side with member count
-    const [jobs]: any = await connection.query(`
-      SELECT 
-        job,
-        COUNT(*) as total_members,
-        SUM(CASE WHEN is_online = TRUE THEN 1 ELSE 0 END) as online_members
-      FROM faction_members
-      WHERE faction = ?
-      GROUP BY job
-    `, [side]);
-
-    res.json({ success: true, jobs });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Get members in specific job
-app.get('/api/faction/members/:job', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const job = req.params.job;
-  const connection = await pool.getConnection();
-  try {
-    // Check if user has access to this job
-    const [access]: any = await connection.query(
-      'SELECT * FROM faction_members WHERE username = ? AND job = ?',
-      [req.session.user.username, job]
-    );
-
-    if (access.length === 0) {
-      return res.json({ success: false, message: 'Access denied - You are not a member of this job' });
-    }
-
-    // Get all members in this job
-    const [members]: any = await connection.query(`
-      SELECT username, rank, invited_date, is_online, last_active
-      FROM faction_members
-      WHERE job = ?
-      ORDER BY 
-        CASE rank 
-          WHEN 'leader' THEN 1 
-          WHEN 'co_leader' THEN 2 
-          ELSE 3 
-        END,
-        username
-    `, [job]);
-
-    res.json({ success: true, members });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Get chat messages for job
-app.get('/api/faction/chat/:job', async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const job = req.params.job;
-  const connection = await pool.getConnection();
-  try {
-    // Check if user has access
-    const [access]: any = await connection.query(
-      'SELECT * FROM faction_members WHERE username = ? AND job = ?',
-      [req.session.user.username, job]
-    );
-
-    if (access.length === 0) {
-      return res.json({ success: false, message: 'Access denied - You are not a member of this job' });
-    }
-
-    // Get recent messages (last 100)
-    const [messages]: any = await connection.query(`
-      SELECT 
-        fc.id,
-        fc.username,
-        fm.rank,
-        fc.message,
-        fc.message_type,
-        fc.media_url,
-        fc.created_at
-      FROM faction_chat fc
-      LEFT JOIN faction_members fm ON fc.username = fm.username AND fc.job = fm.job
-      WHERE fc.job = ?
-      ORDER BY fc.created_at DESC
-      LIMIT 100
-    `, [job]);
-
-    // Reverse to show oldest first
-    messages.reverse();
-
-    res.json({ success: true, messages });
-  } catch (error) {
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// Send chat message
-app.post('/api/faction/chat/send', upload.single('media'), async (req: Request, res: Response) => {
-  if (!req.session.user) {
-    return res.json({ success: false, message: 'Not logged in' });
-  }
-
-  const { job, message, message_type } = req.body;
-  const media_url = req.file ? `/uploads/${req.file.filename}` : null;
-
-  const connection = await pool.getConnection();
-  try {
-    // Check if user has access
-    const [access]: any = await connection.query(
-      'SELECT * FROM faction_members WHERE username = ? AND job = ?',
-      [req.session.user.username, job]
-    );
-
-    if (access.length === 0) {
-      return res.json({ success: false, message: 'Access denied' });
-    }
-
-    // Insert message
-    await connection.query(
-      'INSERT INTO faction_chat (job, username, message, message_type, media_url) VALUES (?, ?, ?, ?, ?)',
-      [job, req.session.user.username, message, message_type || 'text', media_url]
-    );
-
-    // Update last_active
-    await connection.query(
-      'UPDATE faction_members SET last_active = NOW() WHERE username = ? AND job = ?',
-      [req.session.user.username, job]
-    );
-
-    res.json({ success: true, message: 'Message sent' });
-  } catch (error) {
-    console.error('Error sending message:', error);
-    res.json({ success: false, message: 'Server error' });
-  } finally {
-    connection.release();
-  }
-});
-
-// ===================================
-// SERVER STATUS ENDPOINT
-// ===================================
-
-// Get SAMP server status
-app.get('/api/server-status', async (req: Request, res: Response) => {
-  const ip = '208.84.103.75';
-  const port = 7103;
-
-  try {
-    // Query SA-MP server menggunakan axios ke API eksternal
-    // Karena gamedig butuh native dependencies, kita pakai API sebagai proxy
-    const response = await axios.get(`http://api.samp-servers.net/v2/server/${ip}:${port}`);
-    
-    if (response.data && response.data.online) {
-      // Get region info
-      let region = {};
-      try {
-        const geoResponse = await axios.get(`http://ip-api.com/json/${ip}`, { timeout: 3000 });
-        region = {
-          country: geoResponse.data.country || '-',
-          countryCode: geoResponse.data.countryCode || '-',
-          regionName: geoResponse.data.regionName || '-',
-          city: geoResponse.data.city || '-',
-          isp: geoResponse.data.isp || '-'
-        };
-      } catch {
-        region = {
-          country: '-',
-          countryCode: '-',
-          regionName: '-',
-          city: '-',
-          isp: '-'
-        };
-      }
-
-      res.json({
-        success: true,
-        online: true,
-        ip,
-        port,
-        hostname: response.data.hostname || '-',
-        gamemode: response.data.gamemode || '-',
-        mapname: response.data.mapname || '-',
-        playersOnline: response.data.players || 0,
-        maxPlayers: response.data.maxplayers || 0,
-        passworded: response.data.password || false,
-        ping: response.data.ping || 0,
-        region,
-        playerList: response.data.playerlist || []
-      });
-    } else {
-      throw new Error('Server offline');
-    }
-  } catch (error) {
-    res.json({
-      success: false,
-      online: false,
-      ip,
-      port,
-      message: 'Server Offline atau Tidak Merespon'
-    });
-  }
-});
-
-// Start server
-app.listen(PORT, async () => {
-  await initDatabase();
-  console.log(`Server running on port ${PORT}`);
-});
+main();
